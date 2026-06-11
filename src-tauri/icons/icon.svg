@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="nut" x1="200" y1="140" x2="360" y2="420" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#D2691E"/>
+      <stop offset="50%" stop-color="#A0522D"/>
+      <stop offset="100%" stop-color="#8B4513"/>
+    </linearGradient>
+    <linearGradient id="cap" x1="256" y1="80" x2="256" y2="230" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#5C3317"/>
+      <stop offset="100%" stop-color="#3E2210"/>
+    </linearGradient>
+    <radialGradient id="shine" cx="200" cy="280" r="90" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#DEB887" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="#DEB887" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- 整体旋转 -15度 -->
+  <g transform="translate(256,256) rotate(-15) translate(-256,-256)">
+    <!-- 栗子主体 -->
+    <ellipse cx="256" cy="310" rx="115" ry="125" fill="url(#nut)"/>
+
+    <!-- 栗子帽 -->
+    <path d="M141 270 C141 190, 185 140, 256 130 C327 140, 371 190, 371 270 C371 280, 365 288, 355 292 C335 260, 296 240, 256 238 C216 240, 177 260, 157 292 C147 288, 141 280, 141 270Z"
+          fill="url(#cap)"/>
+
+    <!-- 帽子纹理 -->
+    <path d="M185 210 C205 238, 232 248, 256 248 C280 248, 307 238, 327 210"
+          stroke="#4A2A0E" stroke-width="3" fill="none" stroke-opacity="0.4"/>
+    <path d="M165 240 C190 262, 222 272, 256 272 C290 272, 322 262, 347 240"
+          stroke="#4A2A0E" stroke-width="2.5" fill="none" stroke-opacity="0.3"/>
+
+    <!-- 顶部小柄 -->
+    <rect x="248" y="116" width="16" height="22" rx="4" fill="#3E2210"/>
+    <ellipse cx="256" cy="116" rx="10" ry="5" fill="#5C3317"/>
+
+    <!-- 高光 -->
+    <ellipse cx="215" cy="305" rx="45" ry="65" fill="url(#shine)"/>
+
+    <!-- 底部小尖 -->
+    <path d="M246 430 Q256 448 266 430" stroke="#8B4513" stroke-width="4" fill="none" stroke-linecap="round"/>
+  </g>
+</svg>

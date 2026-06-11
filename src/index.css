@@ -1,0 +1,161 @@
+@import "tailwindcss";
+
+:root {
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+  color: #e4e4e7;
+  background-color: #09090b;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* 滚动条 */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #27272a; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
+
+/* Toast 动画 */
+@keyframes toast-in {
+  from { opacity: 0; transform: translate(-50%, -16px) scale(0.96); }
+  to { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+.animate-toast-in {
+  animation: toast-in 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Spinner */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255,255,255,0.2);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+/* 按钮基础 */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.15s ease;
+  cursor: pointer;
+  border: none;
+  outline: none;
+  white-space: nowrap;
+}
+.btn:active { transform: scale(0.97); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+
+.btn-primary {
+  background: #6366f1;
+  color: white;
+}
+.btn-primary:hover:not(:disabled) { background: #5558e6; }
+
+.btn-success {
+  background: #22c55e;
+  color: white;
+}
+.btn-success:hover:not(:disabled) { background: #1db954; }
+
+.btn-danger {
+  background: #ef4444;
+  color: white;
+}
+.btn-danger:hover:not(:disabled) { background: #dc2626; }
+
+.btn-ghost {
+  background: #27272a;
+  color: #a1a1aa;
+}
+.btn-ghost:hover:not(:disabled) { background: #3f3f46; color: #e4e4e7; }
+
+.btn-outline {
+  background: transparent;
+  color: #a1a1aa;
+  border: 1px solid #3f3f46;
+}
+.btn-outline:hover:not(:disabled) { border-color: #52525b; color: #e4e4e7; }
+
+.btn-sm { padding: 6px 12px; font-size: 12px; border-radius: 8px; }
+.btn-lg { padding: 12px 28px; font-size: 14px; border-radius: 12px; }
+
+/* 卡片 */
+.card {
+  background: #18181b;
+  border: 1px solid #27272a;
+  border-radius: 14px;
+  padding: 20px;
+  transition: border-color 0.15s;
+}
+.card:hover { border-color: #3f3f46; }
+.card-sm { padding: 14px; border-radius: 10px; }
+
+/* 输入框 */
+.input {
+  width: 100%;
+  background: #18181b;
+  border: 1px solid #27272a;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: #e4e4e7;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.input:focus { border-color: #6366f1; }
+.input::placeholder { color: #52525b; }
+
+/* 标签 */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+.tag-blue { background: rgba(99,102,241,0.12); color: #818cf8; }
+.tag-green { background: rgba(34,197,94,0.12); color: #4ade80; }
+.tag-purple { background: rgba(168,85,247,0.12); color: #c084fc; }
+.tag-amber { background: rgba(245,158,11,0.12); color: #fbbf24; }
+.tag-red { background: rgba(239,68,68,0.12); color: #f87171; }
+.tag-zinc { background: #27272a; color: #71717a; }
+
+/* 页面切换动画 */
+@keyframes page-enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.page-enter {
+  animation: page-enter 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* 选项卡内容渐变 */
+@keyframes tab-fade-in {
+  from { opacity: 0; transform: translateX(12px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes tab-fade-out {
+  from { opacity: 1; transform: translateX(0); }
+  to { opacity: 0; transform: translateX(-12px); }
+}
