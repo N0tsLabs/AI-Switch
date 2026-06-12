@@ -10,6 +10,7 @@ import CloudSync from './pages/CloudSync';
 import { useModelStore } from './stores/modelStore';
 import { useProfileStore } from './stores/profileStore';
 import { useAuthStore } from './stores/authStore';
+import { useUpdateStore } from './stores/updateStore';
 
 /** 页面切换动画包装器 */
 function PageTransition({ children }: { children: React.ReactNode }) {
@@ -38,11 +39,13 @@ function AppInner() {
   const loadModels = useModelStore((s) => s.loadFromStorage);
   const loadProfiles = useProfileStore((s) => s.loadFromStorage);
   const loadUser = useAuthStore((s) => s.loadUser);
+  const checkUpdate = useUpdateStore((s) => s.check);
 
   useEffect(() => {
     loadModels();
     loadProfiles();
     loadUser();
+    checkUpdate();
   }, []);
 
   return (

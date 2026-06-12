@@ -138,3 +138,16 @@ export async function syncUpload(): Promise<string> {
 export async function syncDownload(): Promise<string> {
   return invoke('sync_download');
 }
+
+// ============ 版本更新 ============
+
+export interface UpdateInfo {
+  has_update: boolean;
+  current_version: string;
+  remote_version: string;
+  download_url: string;
+}
+
+export async function checkUpdate(): Promise<UpdateInfo> {
+  return invoke('check_update');
+}

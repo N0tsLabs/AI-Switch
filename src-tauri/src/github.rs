@@ -432,3 +432,80 @@ pub async fn sync_download() -> Result<String, String> {
 
     Ok(format!("已从云端拉取 {} 个文件", downloaded.len()))
 }
+
+// ============ 版本更新检查 ============
+
+const REPO_OWNER: &str = "n0tssss";
+const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// 从 GitHub 读取远程 VERSION 文件
+async fn fetch_remote_version(client: &reqwest::Client) -> Result<String, String> {
+    let url = format!(
+        "https://raw.githubusercontent.com/{}/{}/master/VERSION",
+        REPO_OWNER, REPO_NAME
+    );
+    let resp = client
+        .get(&url)
+        .header("User-Agent", "ai-switch")
+        .send()
+        .await
+        .map_err(|e| format!("请求失败: {}", e))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("HTTP {}", resp.status()));
+    }
+
+    let version = resp
+        .text()
+        .await
+        .map_err(|e| format!("读取响应失败: {}", e))?
+        .trim()
+        .to_string();
+
+    Ok(version)
+}
+
+/// 比较版本号，返回远程是否更新
+fn is_newer(remote: &str, local: &str) -> bool {
+    let remote_parts: Vec<u32> = remote.split('.').filter_map(|s| s.parse().ok()).collect();
+    let local_parts: Vec<u32> = local.split('.').filter_map(|s| s.parse().ok()).collect();
+
+    for i in 0..3.max(remote_parts.len()).max(local_parts.len()) {
+        let r = remote_parts.get(i).unwrap_or(&0);
+        let l = local_parts.get(i).unwrap_or(&0);
+        if r > l { return true; }
+        if r < l { return false; }
+    }
+    false
+}
+
+#[derive(Serialize)]
+pub struct UpdateInfo {
+    pub has_update: bool,
+    pub current_version: String,
+    pub remote_version: String,
+    pub download_url: String,
+}
+
+/// 检查是否有新版本
+#[tauri::command]
+pub async fn check_update() -> Result<UpdateInfo, String> {
+    let client = reqwest::Client::new();
+    let remote_version = fetch_remote_version(&client).await.unwrap_or_default();
+
+    let has_update = if remote_version.is_empty() {
+        false
+    } else {
+        is_newer(&remote_version, CURRENT_VERSION)
+    };
+
+    Ok(UpdateInfo {
+        has_update,
+        current_version: CURRENT_VERSION.to_string(),
+        remote_version,
+        download_url: format!(
+            "https://github.com/{}/{}/releases/latest",
+            REPO_OWNER, REPO_NAME
+        ),
+    })
+}

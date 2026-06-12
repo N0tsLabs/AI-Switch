@@ -28,6 +28,7 @@ pub fn run() {
             github::github_logout,
             github::sync_upload,
             github::sync_download,
+            github::check_update,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,4 +1,5 @@
 import { NavLink } from 'react-router-dom';
+import { useUpdateStore } from '../stores/updateStore';
 
 const items = [
   { to: '/', icon: <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z"/></svg>, label: '概览' },
@@ -9,6 +10,8 @@ const items = [
 ];
 
 export default function Sidebar() {
+  const { info } = useUpdateStore();
+
   return (
     <aside className="w-52 shrink-0 bg-zinc-950 border-r border-zinc-800/80 flex flex-col">
       <div className="px-4 py-5">
@@ -38,8 +41,18 @@ export default function Sidebar() {
           </NavLink>
         ))}
       </nav>
-      <div className="px-4 py-3 border-t border-zinc-800/80">
-        <p className="text-[11px] text-zinc-600">v0.1.0 · <a href="https://github.com" target="_blank" className="hover:text-zinc-400 transition-colors">GitHub</a></p>
+      <div className="px-4 py-3 border-t border-zinc-800/80 space-y-2">
+        <div className="flex items-center justify-between">
+          <p className="text-[11px] text-zinc-600">v{info?.current_version || '0.1.0'}</p>
+          {info?.has_update && (
+            <a href={info.download_url} target="_blank" rel="noopener"
+              className="text-[10px] px-1.5 py-0.5 bg-indigo-500/10 text-indigo-400 rounded hover:bg-indigo-500/20 transition-colors">
+              v{info.remote_version} 可用
+            </a>
+          )}
+        </div>
+        <a href="https://github.com/n0tssss/AI-Switch" target="_blank" rel="noopener"
+          className="text-[11px] text-zinc-600 hover:text-zinc-400 transition-colors block">GitHub</a>
       </div>
     </aside>
   );
