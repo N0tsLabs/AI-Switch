@@ -1,10 +1,13 @@
 import { useState } from 'react';
 import { useProfileStore, type Profile } from '../stores/profileStore';
 import { useModelStore } from '../stores/modelStore';
+import { writeClaudeSettings, writeOpencodeAgents } from '../lib/tauri';
+import { useToast } from '../components/useToast';
 
 export default function ProfileSwitch() {
   const { profiles, activeProfileId, addProfile, updateProfile, removeProfile, setActiveProfile, saveToStorage } = useProfileStore();
   const providers = useModelStore((s) => s.providers);
+  const { toast } = useToast();
   const [showNew, setShowNew] = useState(false);
   const [newName, setNewName] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -69,9 +72,60 @@ export default function ProfileSwitch() {
     saveToStorage();
   };
 
-  const handleApply = (id: string) => {
-    setActiveProfile(id);
-    saveToStorage();
+  const [applying, setApplying] = useState<string | null>(null);
+
+  /** 应用方案：将 Profile 配置写入 Claude Code 和 OpenCode 配置文件 */
+  const handleApply = async (id: string) => {
+    const profile = profiles.find((p) => p.id === id);
+    if (!profile) return;
+
+    setApplying(id);
+    try {
+      // 1. 写入 Claude Code settings.json
+      const claudeSettings: Record<string, unknown> = {};
+      const env: Record<string, string> = {};
+      if (profile.claude.apiUrl) env.ANTHROPIC_BASE_URL = profile.claude.apiUrl;
+      if (profile.claude.apiKey) env.ANTHROPIC_AUTH_TOKEN = profile.claude.apiKey;
+      if (profile.claude.enabledModel) env.ANTHROPIC_MODEL = profile.claude.enabledModel;
+      if (Object.keys(env).length > 0) claudeSettings.env = env;
+      if (Object.keys(claudeSettings).length > 0) {
+        await writeClaudeSettings(claudeSettings);
+      }
+
+      // 2. 写入 OpenCode oh-my-openagent.json
+      if (profile.opencode.models.length > 0) {
+        const agents: Record<string, unknown> = {};
+        const categories: Record<string, unknown> = {};
+        const modelIds = profile.opencode.models.map((m) => m.modelId);
+
+        modelIds.forEach((modelId, i) => {
+          const agentName = i === 0 ? 'primary' : `agent-${i}`;
+          const modelStr = `opencode/${modelId}`;
+          agents[agentName] = {
+            model: modelStr,
+            fallback_models: modelIds
+              .filter((m) => m !== modelId)
+              .slice(0, 2)
+              .map((m) => ({ model: `opencode/${m}` })),
+          };
+        });
+
+        categories['default'] = {
+          model: `opencode/${modelIds[0]}`,
+          fallback_models: modelIds.slice(1, 3).map((m) => ({ model: `opencode/${m}` })),
+        };
+
+        await writeOpencodeAgents({ agents, categories });
+      }
+
+      setActiveProfile(id);
+      saveToStorage();
+      toast(`方案「${profile.name}」已应用`, 'success');
+    } catch (e) {
+      toast('应用方案失败: ' + String(e), 'error');
+    } finally {
+      setApplying(null);
+    }
   };
 
   const toggleEditModel = (modelId: string) => {
@@ -184,8 +238,9 @@ export default function ProfileSwitch() {
                     <div className="flex gap-2">
                       {!isActive && (
                         <button onClick={() => handleApply(p.id)}
-                          className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded-lg transition-colors">
-                          应用此方案
+                          disabled={applying === p.id}
+                          className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-700 text-white text-xs rounded-lg transition-colors">
+                          {applying === p.id ? '应用中...' : '应用此方案'}
                         </button>
                       )}
                       <button onClick={() => startEdit(p)}

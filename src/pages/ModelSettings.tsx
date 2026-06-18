@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useModelStore, type Provider } from '../stores/modelStore';
 import { fetchOpenaiModels } from '../lib/tauri';
-import { useToast } from '../components/Toast';
+import { useToast } from '../components/useToast';
 
 function ProviderForm({ onSave, initial }: { onSave: (p: Provider) => void; initial?: Provider }) {
   const [name, setName] = useState(initial?.name || '');

@@ -1,6 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-cli/schema.json",
-  "productName": "AI-Switch",
+  "productName": "ai-switch",
   "version": "0.1.0",
   "identifier": "com.ai-switch.app",
   "build": {
@@ -28,8 +28,8 @@
       "open": true
     },
     "updater": {
-      "endpoints": ["https://github.com/你的用户名/ai-switch/releases/latest/download/latest.json"],
-      "pubkey": "",
+      "endpoints": ["https://github.com/n0tssss/ai-switch/releases/latest/download/latest.json"],
+      "pubkey": "MCowBQYDK2VwAyEAFDwmVxEk+JzQn/iEmlhoWg8yqCagWQLxMvjhnbKKXY8=",
       "windows": {
         "installMode": "basicUi"
       }

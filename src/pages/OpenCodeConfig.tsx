@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useModelStore } from '../stores/modelStore';
 import { readOpencodeAgents, writeOpencodeAgents, readFileContent, writeFileContent, getConfigPaths } from '../lib/tauri';
 import { CapabilityTags } from '../components/CapabilityTag';
-import { useToast } from '../components/Toast';
+import { useToast } from '../components/useToast';
 
 export default function OpenCodeConfig() {
   const providers = useModelStore((s) => s.providers);

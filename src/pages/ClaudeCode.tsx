@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useModelStore } from '../stores/modelStore';
 import { readClaudeSettings, writeClaudeSettings, readFileContent, writeFileContent, getConfigPaths } from '../lib/tauri';
-import { useToast } from '../components/Toast';
+import { useToast } from '../components/useToast';
 
 const MODEL_FIELDS = [
   { key: 'default', envKey: 'ANTHROPIC_MODEL', label: '默认模型', desc: '主模型，未指定时使用' },

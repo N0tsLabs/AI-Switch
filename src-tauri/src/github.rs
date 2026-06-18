@@ -1,6 +1,9 @@
+use keyring::Entry;
 use serde::{Deserialize, Serialize};
 
 const CLIENT_ID: &str = "Ov23liYBSMORhKxeSczi";
+const SERVICE_NAME: &str = "ai-switch";
+const ACCOUNT_NAME: &str = "github_token";
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct DeviceCodeResponse {
@@ -27,47 +30,60 @@ pub struct GithubUser {
     pub avatar_url: Option<String>,
 }
 
-#[derive(Serialize, Deserialize)]
-struct TokenStorage {
-    token: String,
-    username: String,
-}
+/// 保存 token 到系统钥匙串
+fn save_token(token: &str, username: &str) -> Result<(), String> {
+    let entry = Entry::new(SERVICE_NAME, ACCOUNT_NAME)
+        .map_err(|e| format!("创建钥匙串条目失败: {}", e))?;
+    entry
+        .set_password(token)
+        .map_err(|e| format!("保存 token 失败: {}", e))?;
 
-/// 获取 token 存储路径
-fn token_path() -> Result<std::path::PathBuf, String> {
+    // 同时保存用户名到本地文件（用户名不敏感）
     let home = dirs::home_dir().ok_or("无法获取主目录")?;
     let dir = home.join(".ai-switch");
     std::fs::create_dir_all(&dir).map_err(|e| format!("创建目录失败: {}", e))?;
-    Ok(dir.join("github_token.json"))
-}
+    let user_file = dir.join("github_user.json");
+    let json = serde_json::json!({ "username": username });
+    std::fs::write(user_file, json.to_string()).map_err(|e| format!("写入用户名失败: {}", e))?;
 
-/// 保存 token 到本地文件
-fn save_token(token: &str, username: &str) -> Result<(), String> {
-    let storage = TokenStorage {
-        token: token.to_string(),
-        username: username.to_string(),
-    };
-    let json = serde_json::to_string_pretty(&storage)
-        .map_err(|e| format!("序列化失败: {}", e))?;
-    std::fs::write(token_path()?, json).map_err(|e| format!("写入失败: {}", e))
+    Ok(())
 }
 
 /// 读取 token
-fn load_token() -> Result<TokenStorage, String> {
-    let path = token_path()?;
-    if !path.exists() {
+fn load_token() -> Result<String, String> {
+    let entry = Entry::new(SERVICE_NAME, ACCOUNT_NAME)
+        .map_err(|e| format!("创建钥匙串条目失败: {}", e))?;
+    entry
+        .get_password()
+        .map_err(|e| format!("读取 token 失败: {}", e))
+}
+
+/// 读取用户名（用于获取存储的 token 时同时获取用户名）
+#[allow(dead_code)]
+fn load_username() -> Result<String, String> {
+    let home = dirs::home_dir().ok_or("无法获取主目录")?;
+    let user_file = home.join(".ai-switch").join("github_user.json");
+    if !user_file.exists() {
         return Err("未登录".into());
     }
-    let content =
-        std::fs::read_to_string(&path).map_err(|e| format!("读取失败: {}", e))?;
-    serde_json::from_str(&content).map_err(|e| format!("解析失败: {}", e))
+    let content = std::fs::read_to_string(&user_file).map_err(|e| format!("读取失败: {}", e))?;
+    let json: serde_json::Value = serde_json::from_str(&content).map_err(|e| format!("解析失败: {}", e))?;
+    json["username"]
+        .as_str()
+        .map(|s| s.to_string())
+        .ok_or_else(|| "用户名不存在".into())
 }
 
 /// 删除 token
 fn delete_token() -> Result<(), String> {
-    let path = token_path()?;
-    if path.exists() {
-        std::fs::remove_file(&path).map_err(|e| format!("删除失败: {}", e))?;
+    let entry = Entry::new(SERVICE_NAME, ACCOUNT_NAME)
+        .map_err(|e| format!("创建钥匙串条目失败: {}", e))?;
+    entry.delete_credential().map_err(|e| format!("删除 token 失败: {}", e))?;
+
+    let home = dirs::home_dir().ok_or("无法获取主目录")?;
+    let user_file = home.join(".ai-switch").join("github_user.json");
+    if user_file.exists() {
+        std::fs::remove_file(&user_file).map_err(|e| format!("删除用户名文件失败: {}", e))?;
     }
     Ok(())
 }
@@ -160,8 +176,8 @@ async fn fetch_user_from_token(token: &str) -> Result<GithubUser, String> {
 /// 获取当前登录用户信息
 #[tauri::command]
 pub async fn get_github_user() -> Result<GithubUser, String> {
-    let storage = load_token()?;
-    let user = fetch_user_from_token(&storage.token).await?;
+    let token = load_token()?;
+    let user = fetch_user_from_token(&token).await?;
     Ok(user)
 }
 
@@ -174,7 +190,7 @@ pub fn github_logout() -> Result<(), String> {
 /// 获取存储的 token（供其他模块使用，如 sync）
 #[allow(dead_code)]
 pub fn get_stored_token() -> Option<String> {
-    load_token().ok().map(|s| s.token)
+    load_token().ok()
 }
 
 // ============ 云同步 ============
@@ -318,12 +334,12 @@ async fn download_file(
 /// 上传配置到云端
 #[tauri::command]
 pub async fn sync_upload() -> Result<String, String> {
-    let storage = load_token()?;
-    let user_info = fetch_user_from_token(&storage.token).await?;
+    let token = load_token()?;
+    let user_info = fetch_user_from_token(&token).await?;
     let client = reqwest::Client::new();
 
     // 确保仓库存在
-    ensure_repo(&client, &storage.token, &user_info.login).await?;
+    ensure_repo(&client, &token, &user_info.login).await?;
 
     let home = dirs::home_dir().ok_or("无法获取主目录")?;
     let mut uploaded = Vec::new();
@@ -334,7 +350,7 @@ pub async fn sync_upload() -> Result<String, String> {
         let content = std::fs::read_to_string(&claude_path)
             .map_err(|e| format!("读取 claude settings 失败: {}", e))?;
         upload_file(
-            &client, &storage.token, &user_info.login,
+            &client, &token, &user_info.login,
             "claude/settings.json", &content, "Sync Claude Code settings"
         ).await?;
         uploaded.push("claude/settings.json");
@@ -346,7 +362,7 @@ pub async fn sync_upload() -> Result<String, String> {
         let content = std::fs::read_to_string(&mcp_path)
             .map_err(|e| format!("读取 claude mcp 失败: {}", e))?;
         upload_file(
-            &client, &storage.token, &user_info.login,
+            &client, &token, &user_info.login,
             "claude/.mcp.json", &content, "Sync Claude Code MCP config"
         ).await?;
         uploaded.push("claude/.mcp.json");
@@ -358,7 +374,7 @@ pub async fn sync_upload() -> Result<String, String> {
         let content = std::fs::read_to_string(&opencode_path)
             .map_err(|e| format!("读取 opencode agents 失败: {}", e))?;
         upload_file(
-            &client, &storage.token, &user_info.login,
+            &client, &token, &user_info.login,
             "opencode/oh-my-openagent.json", &content, "Sync OpenCode agents config"
         ).await?;
         uploaded.push("opencode/oh-my-openagent.json");
@@ -370,7 +386,7 @@ pub async fn sync_upload() -> Result<String, String> {
         let content = std::fs::read_to_string(&opencode_cfg)
             .map_err(|e| format!("读取 opencode config 失败: {}", e))?;
         upload_file(
-            &client, &storage.token, &user_info.login,
+            &client, &token, &user_info.login,
             "opencode/opencode.json", &content, "Sync OpenCode config"
         ).await?;
         uploaded.push("opencode/opencode.json");
@@ -382,14 +398,14 @@ pub async fn sync_upload() -> Result<String, String> {
 /// 从云端拉取配置
 #[tauri::command]
 pub async fn sync_download() -> Result<String, String> {
-    let storage = load_token()?;
-    let user_info = fetch_user_from_token(&storage.token).await?;
+    let token = load_token()?;
+    let user_info = fetch_user_from_token(&token).await?;
     let client = reqwest::Client::new();
     let home = dirs::home_dir().ok_or("无法获取主目录")?;
     let mut downloaded = Vec::new();
 
     // 拉取 Claude settings.json
-    match download_file(&client, &storage.token, &user_info.login, "claude/settings.json").await {
+    match download_file(&client, &token, &user_info.login, "claude/settings.json").await {
         Ok(content) => {
             let path = home.join(".claude").join("settings.json");
             std::fs::create_dir_all(path.parent().unwrap()).ok();
@@ -400,7 +416,7 @@ pub async fn sync_download() -> Result<String, String> {
     }
 
     // 拉取 Claude .mcp.json
-    match download_file(&client, &storage.token, &user_info.login, "claude/.mcp.json").await {
+    match download_file(&client, &token, &user_info.login, "claude/.mcp.json").await {
         Ok(content) => {
             let path = home.join(".claude").join(".mcp.json");
             std::fs::write(&path, content).map_err(|e| format!("写入 claude mcp 失败: {}", e))?;
@@ -410,7 +426,7 @@ pub async fn sync_download() -> Result<String, String> {
     }
 
     // 拉取 OpenCode oh-my-openagent.json
-    match download_file(&client, &storage.token, &user_info.login, "opencode/oh-my-openagent.json").await {
+    match download_file(&client, &token, &user_info.login, "opencode/oh-my-openagent.json").await {
         Ok(content) => {
             let path = home.join(".config").join("opencode").join("oh-my-openagent.json");
             std::fs::create_dir_all(path.parent().unwrap()).ok();
@@ -421,7 +437,7 @@ pub async fn sync_download() -> Result<String, String> {
     }
 
     // 拉取 OpenCode opencode.json
-    match download_file(&client, &storage.token, &user_info.login, "opencode/opencode.json").await {
+    match download_file(&client, &token, &user_info.login, "opencode/opencode.json").await {
         Ok(content) => {
             let path = home.join(".config").join("opencode").join("opencode.json");
             std::fs::write(&path, content).map_err(|e| format!("写入 opencode config 失败: {}", e))?;

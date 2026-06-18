@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { deviceFlowStart, deviceFlowPoll, githubLogout, syncUpload, syncDownload } from '../lib/tauri';
-import { useToast } from '../components/Toast';
+import { useToast } from '../components/useToast';
 import { useAuthStore } from '../stores/authStore';
 
 type LoginStep = 'idle' | 'requesting' | 'waiting' | 'polling' | 'success' | 'error';
@@ -17,10 +17,14 @@ export default function CloudSync() {
   const [lastSync, setLastSync] = useState<string | null>(null);
   const stoppedRef = useRef(false);
 
-  // 如果已登录，直接设为 success
+  // 如果已登录，直接设为 success（用 ref 避免同步 setState 触发级联渲染）
+  const hasSetSuccess = useRef(false);
   useEffect(() => {
-    if (user && step === 'idle') setStep('success');
-  }, [user]);
+    if (user && step === 'idle' && !hasSetSuccess.current) {
+      hasSetSuccess.current = true;
+      setStep('success');
+    }
+  }, [user, step]);
 
   const startLogin = async () => {
     setStep('requesting');

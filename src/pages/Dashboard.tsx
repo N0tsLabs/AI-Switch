@@ -61,7 +61,7 @@ export default function Dashboard() {
   const providers = useModelStore((s) => s.providers);
   const { profiles, activeProfileId } = useProfileStore();
   const activeProfile = profiles.find((p) => p.id === activeProfileId);
-  const greeting = useMemo(getGreeting, []);
+  const greeting = useMemo(() => getGreeting(), []);
   const { user: githubUser } = useAuthStore();
   const [localModels, setLocalModels] = useState<{ id: string; source: string }[]>([]);
 

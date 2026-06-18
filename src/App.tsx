@@ -46,7 +46,7 @@ function AppInner() {
     loadProfiles();
     loadUser();
     checkUpdate();
-  }, []);
+  }, [loadModels, loadProfiles, loadUser, checkUpdate]);
 
   return (
     <ToastProvider>
