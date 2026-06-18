@@ -21,6 +21,7 @@ function normalizeModelId(id: string): string {
   return id.replace(/\[.*?\]$/, '').trim();
 }
 
+/** 从本机配置提取可用模型列表 */
 function extractModels(configs: LocalConfigs, apiKeys: Record<string, string | null>) {
   const models: { id: string; source: string }[] = [];
   const seen = new Set<string>();
@@ -56,20 +57,121 @@ function extractModels(configs: LocalConfigs, apiKeys: Record<string, string | n
   return models;
 }
 
+/** 一键导入：将本机配置导入为模型服务商（每个模型一个服务商） */
+function importToProviders(
+  configs: LocalConfigs,
+  addProvider: (p: import('../stores/modelStore').Provider) => void,
+) {
+  let imported = 0;
+  const seen = new Set<string>();
+
+  // Claude Code → 每个模型创建一个 Anthropic 服务商
+  if (configs.claude.settings) {
+    const env = (configs.claude.settings.env as Record<string, string>) || {};
+    const apiKey = env.ANTHROPIC_AUTH_TOKEN || '';
+    const baseUrl = env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com';
+
+    // 收集所有配置的模型
+    const modelKeys = ['ANTHROPIC_MODEL', 'ANTHROPIC_DEFAULT_HAIKU_MODEL', 'ANTHROPIC_DEFAULT_SONNET_MODEL', 'ANTHROPIC_DEFAULT_OPUS_MODEL'];
+    for (const key of modelKeys) {
+      const model = env[key];
+      if (model && apiKey && !seen.has(model)) {
+        seen.add(model);
+        addProvider({
+          id: `claude-${model}-${Date.now()}`,
+          name: model,
+          apiFormat: 'anthropic',
+          url: baseUrl,
+          apiKey,
+          models: [model],
+          modelCapabilities: {},
+        });
+        imported++;
+      }
+    }
+  }
+
+  // OpenCode agents → 每个模型创建一个服务商
+  if (configs.opencode.agents) {
+    const agents = (configs.opencode.agents.agents as Record<string, unknown>) || {};
+
+    Object.values(agents).forEach((agent: unknown) => {
+      const a = agent as Record<string, unknown>;
+      const modelStr = (a.model as string) || '';
+      const rawId = modelStr.replace(/^(opencode|openai)\//, '');
+      const modelId = normalizeModelId(rawId);
+      if (!modelId || seen.has(modelId)) return;
+      seen.add(modelId);
+
+      const id = modelId.toLowerCase();
+      let url = 'https://api.openai.com/v1';
+      let apiFormat: 'openai' | 'anthropic' = 'openai';
+
+      if (id.includes('claude') || id.includes('anthropic')) {
+        apiFormat = 'anthropic';
+        url = 'https://api.anthropic.com';
+      } else if (id.includes('gemini') || id.includes('google')) {
+        url = 'https://generativelanguage.googleapis.com/v1beta';
+      } else if (id.includes('deepseek')) {
+        url = 'https://api.deepseek.com/v1';
+      }
+
+      addProvider({
+        id: `opencode-${modelId}-${Date.now()}`,
+        name: modelId,
+        apiFormat,
+        url,
+        apiKey: '',
+        models: [modelId],
+        modelCapabilities: {},
+      });
+      imported++;
+    });
+  }
+
+  return imported;
+}
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const providers = useModelStore((s) => s.providers);
+  const addProvider = useModelStore((s) => s.addProvider);
   const { profiles, activeProfileId } = useProfileStore();
   const activeProfile = profiles.find((p) => p.id === activeProfileId);
   const greeting = useMemo(() => getGreeting(), []);
   const { user: githubUser } = useAuthStore();
   const [localModels, setLocalModels] = useState<{ id: string; source: string }[]>([]);
+  const [localConfigs, setLocalConfigs] = useState<LocalConfigs | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [importMsg, setImportMsg] = useState('');
 
   useEffect(() => {
     Promise.all([readLocalConfigs(), detectApiKeys()])
-      .then(([configs, keys]) => setLocalModels(extractModels(configs, keys)))
+      .then(([configs, keys]) => {
+        setLocalConfigs(configs);
+        setLocalModels(extractModels(configs, keys));
+      })
       .catch(() => {});
   }, []);
+
+  const handleImportLocal = async () => {
+    if (!localConfigs) return;
+    setImporting(true);
+    setImportMsg('');
+    try {
+      const count = importToProviders(localConfigs, addProvider);
+      if (count > 0) {
+        useModelStore.getState().saveToStorage();
+        setImportMsg(`导入成功！已添加 ${count} 个服务商到模型设置`);
+      } else {
+        setImportMsg('未检测到可导入的配置');
+      }
+    } catch (e) {
+      setImportMsg('导入失败: ' + String(e));
+    } finally {
+      setImporting(false);
+    }
+  };
 
   const totalModels = providers.reduce((n, p) => n + p.models.length, 0);
 
@@ -134,6 +236,40 @@ export default function Dashboard() {
           </div>
         ))}
       </div>
+
+      {/* 本机配置一键导入 */}
+      {localModels.length > 0 && (
+        <div className="card">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h2 className="text-sm font-medium text-zinc-300">本机配置检测</h2>
+              <p className="text-xs text-zinc-500 mt-1">
+                检测到 {localModels.length} 个模型，可一键导入到服务商设置
+              </p>
+            </div>
+            <button
+              onClick={handleImportLocal}
+              disabled={importing}
+              className="btn btn-primary btn-sm"
+            >
+              {importing ? '导入中...' : '一键导入'}
+            </button>
+          </div>
+          <div className="space-y-1.5">
+            {localModels.map((m) => (
+              <div key={m.id} className="flex items-center justify-between bg-zinc-800/50 rounded-lg px-3 py-2">
+                <span className="text-sm text-zinc-300">{m.id}</span>
+                <span className="text-xs text-zinc-500">{m.source === 'claude' ? 'Claude Code' : 'OpenCode'}</span>
+              </div>
+            ))}
+          </div>
+          {importMsg && (
+            <p className={`text-xs mt-2 ${importMsg.includes('成功') ? 'text-emerald-400' : 'text-red-400'}`}>
+              {importMsg}
+            </p>
+          )}
+        </div>
+      )}
 
       {/* 当前方案 */}
       {activeProfile && (

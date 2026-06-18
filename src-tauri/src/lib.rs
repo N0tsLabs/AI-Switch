@@ -19,6 +19,7 @@ pub fn run() {
             commands::config::detect_api_keys,
             commands::config::read_file_content,
             commands::config::write_file_content,
+            commands::config::open_url,
             // 模型
             commands::model::fetch_openai_models,
             // GitHub

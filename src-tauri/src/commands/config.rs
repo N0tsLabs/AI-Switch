@@ -199,5 +199,12 @@ pub fn write_file_content(path: String, content: String) -> Result<(), String> {
     if let Some(parent) = std::path::Path::new(&path).parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("创建目录失败: {}", e))?;
     }
-    std::fs::write(&path, content).map_err(|e| format!("写入失败: {}", e))
+    std::fs::write(&path, &content).map_err(|e| format!("写入失败: {}", e))
+}
+
+// ============ 打开浏览器 ============
+
+#[tauri::command]
+pub fn open_url(url: String) -> Result<(), String> {
+    open::that(&url).map_err(|e| format!("打开浏览器失败: {}", e))
 }

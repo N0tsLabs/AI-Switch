@@ -54,28 +54,32 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'AI-Switch ${{ github.ref_name }}'
-          releaseBody: '## What''s New
+          releaseBody: '## 更新内容
 
-### Features
-- Profile switching for Claude Code and OpenCode
-- GitHub Device Flow login and cloud sync
-- Version update check with GitHub API
+### 新功能
+- Claude Code 和 OpenCode 的配置文件切换
+- GitHub Device Flow 登录（自动打开浏览器 + 复制验证码）
+- 云同步配置到 GitHub 私有仓库
+- 版本更新检查
+- 本机配置一键导入到服务商设置
+- Agent 工具页选择服务商和模型（API 配置统一在模型设置管理）
 
-### Bug Fixes
-- Toast context split for React Fast Refresh
-- Token storage security (system keyring)
-- Profile apply writes actual config files
-- ESLint and TypeScript fixes
+### 修复
+- Token 存储兼容性（改用文件存储，修复 Windows 钥匙串问题）
+- GitHub 登录后状态刷新
+- Toast Context 拆分，支持 React Fast Refresh
+- 配置文件应用功能
+- ESLint 和 TypeScript 修复
 
-### Build
-- Tauri 2 desktop app with auto-update support
-- GitHub Actions CI/CD for Windows, macOS, Linux
+### 构建
+- Tauri 2 桌面应用，支持自动更新
+- GitHub Actions CI/CD，支持 Windows、macOS、Linux
 
 ---
 
-**Windows**: Download `ai-switch_x64-setup.exe` or `ai-switch_x64_en-US.msi`
-**macOS**: Download `ai-switch_aarch64.dmg` (M1/M2) or `ai-switch_x64.dmg` (Intel)
-**Linux**: Download `ai-switch_amd64.deb` (Debian/Ubuntu) or `ai-switch_amd64.AppImage`'
+**Windows**: 下载 `ai-switch_x64-setup.exe` 或 `ai-switch_x64_en-US.msi`
+**macOS**: 下载 `ai-switch_aarch64.dmg`（M1/M2）或 `ai-switch_x64.dmg`（Intel）
+**Linux**: 下载 `ai-switch_amd64.deb`（Debian/Ubuntu）或 `ai-switch_amd64.AppImage`'
           releaseDraft: true
           prerelease: false
           generateReleaseNotes: true

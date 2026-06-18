@@ -13,8 +13,7 @@ const MODEL_FIELDS = [
 export default function ClaudeCode() {
   const providers = useModelStore((s) => s.providers);
 
-  const [apiUrl, setApiUrl] = useState('');
-  const [apiKey, setApiKey] = useState('');
+  const [selectedProviderId, setSelectedProviderId] = useState('');
   const [models, setModels] = useState<Record<string, string>>({ default: '', sonnet: '', opus: '', haiku: '' });
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
@@ -32,8 +31,11 @@ export default function ClaudeCode() {
     readClaudeSettings()
       .then((settings) => {
         const env = (settings.env as Record<string, string>) || {};
-        setApiUrl(env.ANTHROPIC_BASE_URL || '');
-        setApiKey(env.ANTHROPIC_AUTH_TOKEN || '');
+        const currentUrl = env.ANTHROPIC_BASE_URL || '';
+        const currentKey = env.ANTHROPIC_AUTH_TOKEN || '';
+        // 根据当前 API 信息匹配服务商
+        const matched = providers.find((p) => p.url === currentUrl && p.apiKey === currentKey);
+        if (matched) setSelectedProviderId(matched.id);
         setModels({
           default: env.ANTHROPIC_MODEL || '',
           sonnet: env.ANTHROPIC_DEFAULT_SONNET_MODEL || '',
@@ -43,7 +45,7 @@ export default function ClaudeCode() {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+  }, [providers]);
 
   const allModels = providers.flatMap((p) =>
     p.models.map((m) => ({ label: `${p.name} / ${m}`, modelId: m }))
@@ -67,8 +69,12 @@ export default function ClaudeCode() {
     try {
       const current = await readClaudeSettings();
       const env = (current.env as Record<string, string>) || {};
-      env.ANTHROPIC_BASE_URL = apiUrl;
-      env.ANTHROPIC_AUTH_TOKEN = apiKey;
+      // 从选中的服务商获取 API 信息
+      const provider = providers.find((p) => p.id === selectedProviderId);
+      if (provider) {
+        env.ANTHROPIC_BASE_URL = provider.url;
+        env.ANTHROPIC_AUTH_TOKEN = provider.apiKey;
+      }
       env.ANTHROPIC_MODEL = resolveModelName(models.default);
       env.ANTHROPIC_DEFAULT_SONNET_MODEL = resolveModelName(models.sonnet);
       env.ANTHROPIC_DEFAULT_OPUS_MODEL = resolveModelName(models.opus);
@@ -113,22 +119,33 @@ export default function ClaudeCode() {
   return (
     <div className="max-w-4xl">
       <h1 className="text-2xl font-bold text-white mb-1">🟣 Claude Code</h1>
-      <p className="text-zinc-500 text-sm mb-8">配置 API 地址和各模型变体</p>
+      <p className="text-zinc-500 text-sm mb-8">选择服务商和模型，API 配置在「模型设置」中管理</p>
 
       <div className="space-y-6">
-        {/* API 设置 */}
+        {/* 服务商选择 */}
         <section className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 space-y-4">
-          <h2 className="text-sm font-medium text-zinc-400">API 设置</h2>
-          <div>
-            <label className="block text-xs text-zinc-500 mb-1">API Base URL</label>
-            <input value={apiUrl} onChange={(e) => setApiUrl(e.target.value)} placeholder="https://api.anthropic.com"
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500" />
-          </div>
-          <div>
-            <label className="block text-xs text-zinc-500 mb-1">API Key</label>
-            <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-ant-..."
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500" />
-          </div>
+          <h2 className="text-sm font-medium text-zinc-400">选择服务商</h2>
+          {providers.length === 0 ? (
+            <p className="text-xs text-zinc-500">请先在<a href="/models" className="text-blue-400 hover:underline">模型设置</a>中添加服务商</p>
+          ) : (
+            <select value={selectedProviderId} onChange={(e) => setSelectedProviderId(e.target.value)}
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500">
+              <option value="">未选择</option>
+              {providers.map((p) => (
+                <option key={p.id} value={p.id}>{p.name}（{p.models.length} 个模型）</option>
+              ))}
+            </select>
+          )}
+          {selectedProviderId && (() => {
+            const prov = providers.find((p) => p.id === selectedProviderId);
+            if (!prov) return null;
+            return (
+              <div className="text-xs text-zinc-500 space-y-0.5">
+                <p>API 地址：{prov.url}</p>
+                <p>API 格式：{prov.apiFormat}</p>
+              </div>
+            );
+          })()}
         </section>
 
         {/* 四个模型变体 */}
@@ -142,9 +159,12 @@ export default function ClaudeCode() {
             {providers.length > 0 && (
               <select onChange={(e) => {
                 const provider = providers.find((p) => p.id === e.target.value);
-                if (provider && provider.models.length > 0) {
-                  const model = provider.models[0];
-                  setModels({ default: model, sonnet: model, opus: model, haiku: model });
+                if (provider) {
+                  setSelectedProviderId(provider.id);
+                  if (provider.models.length > 0) {
+                    const model = provider.models[0];
+                    setModels({ default: model, sonnet: model, opus: model, haiku: model });
+                  }
                 }
                 e.target.value = '';
               }} defaultValue=""

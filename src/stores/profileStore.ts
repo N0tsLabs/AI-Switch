@@ -2,12 +2,10 @@ import { create } from 'zustand';
 
 /** Profile 中 Claude Code 的配置 */
 export interface ClaudeProfileConfig {
-  /** 启用的模型 ID (完整格式如 "claude-opus-4-6") */
+  /** 选中的服务商 ID */
+  providerId: string;
+  /** 启用的模型 ID */
   enabledModel: string;
-  /** API Base URL */
-  apiUrl: string;
-  /** API Key */
-  apiKey: string;
 }
 
 /** Profile 中 OpenCode 的模型配置 */

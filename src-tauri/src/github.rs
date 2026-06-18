@@ -1,9 +1,6 @@
-use keyring::Entry;
 use serde::{Deserialize, Serialize};
 
 const CLIENT_ID: &str = "Ov23liYBSMORhKxeSczi";
-const SERVICE_NAME: &str = "ai-switch";
-const ACCOUNT_NAME: &str = "github_token";
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct DeviceCodeResponse {
@@ -30,39 +27,39 @@ pub struct GithubUser {
     pub avatar_url: Option<String>,
 }
 
-/// 保存 token 到系统钥匙串
-fn save_token(token: &str, username: &str) -> Result<(), String> {
-    let entry = Entry::new(SERVICE_NAME, ACCOUNT_NAME)
-        .map_err(|e| format!("创建钥匙串条目失败: {}", e))?;
-    entry
-        .set_password(token)
-        .map_err(|e| format!("保存 token 失败: {}", e))?;
-
-    // 同时保存用户名到本地文件（用户名不敏感）
+fn ai_switch_dir() -> Result<std::path::PathBuf, String> {
     let home = dirs::home_dir().ok_or("无法获取主目录")?;
     let dir = home.join(".ai-switch");
     std::fs::create_dir_all(&dir).map_err(|e| format!("创建目录失败: {}", e))?;
+    Ok(dir)
+}
+
+/// 保存 token 到本地文件
+fn save_token(token: &str, username: &str) -> Result<(), String> {
+    let dir = ai_switch_dir()?;
+    let token_file = dir.join("github_token.txt");
+    std::fs::write(&token_file, token).map_err(|e| format!("保存 token 失败: {}", e))?;
     let user_file = dir.join("github_user.json");
     let json = serde_json::json!({ "username": username });
     std::fs::write(user_file, json.to_string()).map_err(|e| format!("写入用户名失败: {}", e))?;
-
     Ok(())
 }
 
 /// 读取 token
 fn load_token() -> Result<String, String> {
-    let entry = Entry::new(SERVICE_NAME, ACCOUNT_NAME)
-        .map_err(|e| format!("创建钥匙串条目失败: {}", e))?;
-    entry
-        .get_password()
-        .map_err(|e| format!("读取 token 失败: {}", e))
+    let dir = ai_switch_dir().map_err(|e| e)?;
+    let token_file = dir.join("github_token.txt");
+    if !token_file.exists() {
+        return Err("未登录".into());
+    }
+    std::fs::read_to_string(&token_file).map_err(|e| format!("读取 token 失败: {}", e))
 }
 
-/// 读取用户名（用于获取存储的 token 时同时获取用户名）
+/// 读取用户名
 #[allow(dead_code)]
 fn load_username() -> Result<String, String> {
-    let home = dirs::home_dir().ok_or("无法获取主目录")?;
-    let user_file = home.join(".ai-switch").join("github_user.json");
+    let dir = ai_switch_dir()?;
+    let user_file = dir.join("github_user.json");
     if !user_file.exists() {
         return Err("未登录".into());
     }
@@ -76,12 +73,12 @@ fn load_username() -> Result<String, String> {
 
 /// 删除 token
 fn delete_token() -> Result<(), String> {
-    let entry = Entry::new(SERVICE_NAME, ACCOUNT_NAME)
-        .map_err(|e| format!("创建钥匙串条目失败: {}", e))?;
-    entry.delete_credential().map_err(|e| format!("删除 token 失败: {}", e))?;
-
-    let home = dirs::home_dir().ok_or("无法获取主目录")?;
-    let user_file = home.join(".ai-switch").join("github_user.json");
+    let dir = ai_switch_dir()?;
+    let token_file = dir.join("github_token.txt");
+    if token_file.exists() {
+        std::fs::remove_file(&token_file).map_err(|e| format!("删除 token 失败: {}", e))?;
+    }
+    let user_file = dir.join("github_user.json");
     if user_file.exists() {
         std::fs::remove_file(&user_file).map_err(|e| format!("删除用户名文件失败: {}", e))?;
     }

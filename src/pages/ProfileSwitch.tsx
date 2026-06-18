@@ -12,22 +12,24 @@ export default function ProfileSwitch() {
   const [newName, setNewName] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
+  const [editClaudeProviderId, setEditClaudeProviderId] = useState('');
   const [editClaudeModel, setEditClaudeModel] = useState('');
-  const [editClaudeUrl, setEditClaudeUrl] = useState('');
-  const [editClaudeKey, setEditClaudeKey] = useState('');
   const [editOpencodeModels, setEditOpencodeModels] = useState<string[]>([]);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   // 所有可用模型
   const allModels = providers.flatMap((p) =>
-    p.models.map((m) => ({ providerName: p.name, modelId: m, label: `${p.name} / ${m}` }))
+    p.models.map((m) => ({ providerId: p.id, providerName: p.name, modelId: m, label: `${p.name} / ${m}` }))
   );
+
+  // 当前选中的 Claude 服务商
+  const selectedClaudeProvider = providers.find((p) => p.id === editClaudeProviderId);
 
   const handleCreate = () => {
     if (!newName.trim()) return;
     addProfile({
       name: newName.trim(),
-      claude: { enabledModel: '', apiUrl: '', apiKey: '' },
+      claude: { providerId: '', enabledModel: '' },
       opencode: { models: [] },
     });
     setNewName('');
@@ -38,9 +40,8 @@ export default function ProfileSwitch() {
   const startEdit = (p: Profile) => {
     setEditingId(p.id);
     setEditName(p.name);
+    setEditClaudeProviderId(p.claude.providerId);
     setEditClaudeModel(p.claude.enabledModel);
-    setEditClaudeUrl(p.claude.apiUrl);
-    setEditClaudeKey(p.claude.apiKey);
     setEditOpencodeModels(p.opencode.models.map((m) => m.modelId));
   };
 
@@ -49,9 +50,8 @@ export default function ProfileSwitch() {
     updateProfile(editingId, {
       name: editName.trim(),
       claude: {
+        providerId: editClaudeProviderId,
         enabledModel: editClaudeModel,
-        apiUrl: editClaudeUrl,
-        apiKey: editClaudeKey,
       },
       opencode: {
         models: editOpencodeModels.map((modelId) => ({
@@ -81,11 +81,12 @@ export default function ProfileSwitch() {
 
     setApplying(id);
     try {
-      // 1. 写入 Claude Code settings.json
+      // 1. 写入 Claude Code settings.json — 从服务商获取 API 信息
+      const provider = providers.find((p) => p.id === profile.claude.providerId);
       const claudeSettings: Record<string, unknown> = {};
       const env: Record<string, string> = {};
-      if (profile.claude.apiUrl) env.ANTHROPIC_BASE_URL = profile.claude.apiUrl;
-      if (profile.claude.apiKey) env.ANTHROPIC_AUTH_TOKEN = profile.claude.apiKey;
+      if (provider?.url) env.ANTHROPIC_BASE_URL = provider.url;
+      if (provider?.apiKey) env.ANTHROPIC_AUTH_TOKEN = provider.apiKey;
       if (profile.claude.enabledModel) env.ANTHROPIC_MODEL = profile.claude.enabledModel;
       if (Object.keys(env).length > 0) claudeSettings.env = env;
       if (Object.keys(claudeSettings).length > 0) {
@@ -134,6 +135,17 @@ export default function ProfileSwitch() {
     );
   };
 
+  /** 服务商选择变更时，自动选中该服务商的第一个模型 */
+  const handleProviderChange = (providerId: string) => {
+    setEditClaudeProviderId(providerId);
+    const provider = providers.find((p) => p.id === providerId);
+    if (provider && provider.models.length > 0) {
+      setEditClaudeModel(provider.models[0]);
+    } else {
+      setEditClaudeModel('');
+    }
+  };
+
   return (
     <div className="max-w-4xl">
       <h1 className="text-2xl font-bold text-white mb-1">🔄 切换方案</h1>
@@ -145,7 +157,7 @@ export default function ProfileSwitch() {
         <p className="text-xs text-zinc-500 leading-relaxed">
           方案是一组配置快照，可以保存不同场景下的模型配置。比如「工作模式」用高性能模型，「省钱模式」用经济模型。
           点击「应用此方案」会将该方案的配置写入 Claude Code 和 OpenCode 的配置文件，立即生效。
-          你也可以不创建方案，直接在 Claude Code / OpenCode 页面手动配置。
+          API 地址和 Key 在「模型设置」中配置，方案里只选择用哪个服务商和模型。
         </p>
       </div>
 
@@ -168,33 +180,30 @@ export default function ProfileSwitch() {
                       className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500" />
                   </div>
 
-                  {/* Claude 配置 */}
+                  {/* Claude 配置 — 只选服务商和模型 */}
                   <div className="bg-zinc-800/50 rounded-lg p-3 space-y-2">
                     <p className="text-xs text-zinc-400 font-medium">🟣 Claude Code</p>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-xs text-zinc-600 mb-0.5">选择服务商</label>
+                      <select value={editClaudeProviderId} onChange={(e) => handleProviderChange(e.target.value)}
+                        className="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-xs text-white">
+                        <option value="">未选择</option>
+                        {providers.map((p) => (
+                          <option key={p.id} value={p.id}>{p.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    {selectedClaudeProvider && selectedClaudeProvider.models.length > 0 && (
                       <div>
-                        <label className="block text-xs text-zinc-600 mb-0.5">启用模型</label>
+                        <label className="block text-xs text-zinc-600 mb-0.5">选择模型</label>
                         <select value={editClaudeModel} onChange={(e) => setEditClaudeModel(e.target.value)}
                           className="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-xs text-white">
-                          <option value="">未配置</option>
-                          {allModels.map((m) => (
-                            <option key={m.modelId} value={m.modelId}>{m.label}</option>
+                          {selectedClaudeProvider.models.map((m) => (
+                            <option key={m} value={m}>{m}</option>
                           ))}
                         </select>
                       </div>
-                      <div>
-                        <label className="block text-xs text-zinc-600 mb-0.5">API URL</label>
-                        <input value={editClaudeUrl} onChange={(e) => setEditClaudeUrl(e.target.value)}
-                          placeholder="https://api.anthropic.com"
-                          className="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-xs text-white" />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-xs text-zinc-600 mb-0.5">API Key</label>
-                      <input type="password" value={editClaudeKey} onChange={(e) => setEditClaudeKey(e.target.value)}
-                        placeholder="sk-ant-..."
-                        className="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-xs text-white" />
-                    </div>
+                    )}
                   </div>
 
                   {/* OpenCode 配置 */}
@@ -263,7 +272,10 @@ export default function ProfileSwitch() {
                     <div className="bg-zinc-800/50 rounded-lg p-3">
                       <p className="text-zinc-500 mb-1">🟣 Claude Code</p>
                       <p className="text-zinc-300">{p.claude.enabledModel || '未配置'}</p>
-                      {p.claude.apiUrl && <p className="text-zinc-600 truncate mt-0.5">{p.claude.apiUrl}</p>}
+                      {p.claude.providerId && (() => {
+                        const prov = providers.find((pp) => pp.id === p.claude.providerId);
+                        return prov ? <p className="text-zinc-600 truncate mt-0.5">{prov.name}</p> : null;
+                      })()}
                     </div>
                     <div className="bg-zinc-800/50 rounded-lg p-3">
                       <p className="text-zinc-500 mb-1">🟢 OpenCode</p>

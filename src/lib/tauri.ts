@@ -1,5 +1,11 @@
 import { invoke } from '@tauri-apps/api/core';
 
+// ============ 通用 ============
+
+export async function openUrl(url: string): Promise<void> {
+  return invoke('open_url', { url });
+}
+
 // ============ Claude Code ============
 
 export async function readClaudeSettings(): Promise<Record<string, unknown>> {

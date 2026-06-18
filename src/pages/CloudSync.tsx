@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { deviceFlowStart, deviceFlowPoll, githubLogout, syncUpload, syncDownload } from '../lib/tauri';
+import { deviceFlowStart, deviceFlowPoll, githubLogout, syncUpload, syncDownload, openUrl } from '../lib/tauri';
 import { useToast } from '../components/useToast';
 import { useAuthStore } from '../stores/authStore';
 
@@ -34,6 +34,8 @@ export default function CloudSync() {
       setUserCode(resp.user_code);
       setVerifyUrl(resp.verification_uri);
       setStep('waiting');
+      try { await navigator.clipboard.writeText(resp.user_code); } catch { /* ignore */ }
+      openUrl(resp.verification_uri).catch(() => {});
       startPolling(resp.device_code, resp.interval);
     } catch (e) {
       setErrorMsg(String(e));
@@ -51,8 +53,9 @@ export default function CloudSync() {
       try {
         await deviceFlowPoll(deviceCode);
         stoppedRef.current = true;
+        useAuthStore.setState({ loaded: false, loading: false });
+        await loadUser();
         setStep('success');
-        loadUser();
       } catch (e: unknown) {
         const msg = String(e);
         if (msg.includes('slow_down')) currentInterval += 5000;
