@@ -52,9 +52,31 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: app-v__VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version.
-          releaseName: 'App v__VERSION__'
-          releaseBody: 'See the assets to download this version.'
+          tagName: ${{ github.ref_name }}
+          releaseName: 'AI-Switch ${{ github.ref_name }}'
+          releaseBody: '## What''s New
+
+### Features
+- Profile switching for Claude Code and OpenCode
+- GitHub Device Flow login and cloud sync
+- Version update check with GitHub API
+
+### Bug Fixes
+- Toast context split for React Fast Refresh
+- Token storage security (system keyring)
+- Profile apply writes actual config files
+- ESLint and TypeScript fixes
+
+### Build
+- Tauri 2 desktop app with auto-update support
+- GitHub Actions CI/CD for Windows, macOS, Linux
+
+---
+
+**Windows**: Download `ai-switch_x64-setup.exe` or `ai-switch_x64_en-US.msi`
+**macOS**: Download `ai-switch_aarch64.dmg` (M1/M2) or `ai-switch_x64.dmg` (Intel)
+**Linux**: Download `ai-switch_amd64.deb` (Debian/Ubuntu) or `ai-switch_amd64.AppImage`'
           releaseDraft: true
           prerelease: false
+          generateReleaseNotes: true
           args: ${{ matrix.args }}
