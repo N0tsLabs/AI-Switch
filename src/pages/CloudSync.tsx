@@ -11,7 +11,7 @@ export default function CloudSync() {
   const { toast } = useToast();
   const { user, loadUser, clearUser } = useAuthStore();
   const lastSyncedVersion = useSettingsStore((s) => s.lastSyncedVersion);
-  const { syncUp, syncDown, isLoggedIn } = useCloudSync();
+  const { syncUp, syncDown } = useCloudSync();
   const [step, setStep] = useState<LoginStep>('idle');
   const [userCode, setUserCode] = useState('');
   const [verifyUrl, setVerifyUrl] = useState('');

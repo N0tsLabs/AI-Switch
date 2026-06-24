@@ -4,6 +4,7 @@ import { fetchOpenaiModels, testProviderUrl, type TestResult } from '../lib/taur
 import { useToast } from '../components/useToast';
 
 function ProviderForm({ onSave, initial }: { onSave: (p: Provider) => void; initial?: Provider }) {
+  const { toast } = useToast();
   const [name, setName] = useState(initial?.name || '');
   // 双 URL 字段：Anthropic 用于 ClaudeCode，OpenAI 用于 OpenCode
   // 旧版 Provider 有单一 url 字段，从这里迁移到对应格式

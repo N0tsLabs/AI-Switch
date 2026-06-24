@@ -172,8 +172,14 @@ export default function OpenCodeConfig() {
         if (cfg.share === 'auto' || cfg.share === 'disabled') {
           setOpencodeToggle('share', cfg.share);
         }
-        if (cfg.autoupdate === false || cfg.autoupdate === 'notify') {
-          setOpencodeToggle('autoupdate', cfg.autoupdate);
+        // opencode.json 里的 autoupdate 是 true/false/'notify'，
+        // settingsStore 的 autoupdate 是 'off' | 'notify' | 'on'，需要转换
+        if (cfg.autoupdate === false) {
+          setOpencodeToggle('autoupdate', 'off');
+        } else if (cfg.autoupdate === 'notify') {
+          setOpencodeToggle('autoupdate', 'notify');
+        } else if (cfg.autoupdate === true) {
+          setOpencodeToggle('autoupdate', 'on');
         }
       })
       .catch(() => {});

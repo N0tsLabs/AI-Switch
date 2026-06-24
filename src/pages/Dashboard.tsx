@@ -249,12 +249,12 @@ export default function Dashboard() {
         <button onClick={() => navigate('/sync')}
           className="card-sm text-left hover:border-zinc-600 transition-colors cursor-pointer relative">
           <div className="flex items-center gap-2 mb-1.5">
-            <div className={`w-2 h-2 rounded-full ${getSyncDotColor(githubUser, cloudChecking, cloudError)}`} />
+            <div className={`w-2 h-2 rounded-full ${getSyncDotColor(!!githubUser, cloudChecking, cloudError)}`} />
             <span className="text-xs text-zinc-500">云同步</span>
             {cloudChecking && <div className="w-3 h-3 border border-zinc-500 border-t-transparent rounded-full animate-spin ml-auto" />}
           </div>
           <p className="text-sm text-zinc-300 leading-tight">
-            {getSyncStatusText(githubUser, cloudChecking, cloudError, cloudVersion, cloudNotFound, lastSyncedVersion)}
+            {getSyncStatusText(!!githubUser, cloudChecking, cloudError, cloudVersion, cloudNotFound, lastSyncedVersion)}
           </p>
         </button>
         <button onClick={() => navigate('/models')}
