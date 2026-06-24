@@ -1,4 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
+import type { Profile } from '../stores/profileStore';
+import type { ClaudeToggles, OpenCodeToggles } from '../stores/settingsStore';
+import type { Provider } from '../stores/modelStore';
 
 // ============ 通用 ============
 
@@ -135,14 +138,112 @@ export async function githubLogout(): Promise<void> {
   return invoke('github_logout');
 }
 
-// ============ 云同步 ============
+// ============ Key-level merge（仅动模型相关字段） ============
 
-export async function syncUpload(): Promise<string> {
-  return invoke('sync_upload');
+/** 读取 ~/.claude/settings.json 中的 env 字段（缺失返回 {}） */
+export async function extractClaudeEnv(): Promise<Record<string, string>> {
+  return invoke('extract_claude_env');
 }
 
-export async function syncDownload(): Promise<string> {
+/** 把 env 合并进 settings.json，保留其他顶层字段。空字符串值会删除对应 key */
+export async function mergeClaudeEnv(env: Record<string, string>): Promise<void> {
+  return invoke('merge_claude_env', { env });
+}
+
+/** 读取 ~/.config/opencode/oh-my-openagent.json 的 agents + categories */
+export async function extractOpencodeManaged(): Promise<{
+  agents: Record<string, unknown> | null;
+  categories: Record<string, unknown> | null;
+}> {
+  return invoke('extract_opencode_managed');
+}
+
+/** 把 agents + categories 合并进 oh-my-openagent.json，保留其他顶层字段 */
+export async function mergeOpencodeManaged(payload: {
+  agents: Record<string, unknown> | null;
+  categories: Record<string, unknown> | null;
+}): Promise<void> {
+  return invoke('merge_opencode_managed', { payload });
+}
+
+/** 单个键操作：path 是 JSON 路径（如 ["permissions","defaultMode"]），value=null 时删除 */
+export interface ExtraOp {
+  path: string[];
+  value: unknown;
+}
+
+/** 批量应用任意路径操作到 settings.json（其他字段全部保留） */
+export async function mergeClaudeExtras(ops: ExtraOp[]): Promise<void> {
+  return invoke('merge_claude_extras', { ops });
+}
+
+/** 批量应用任意路径操作到 oh-my-openagent.json（其他字段全部保留） */
+export async function mergeOpencodeExtras(ops: ExtraOp[]): Promise<void> {
+  return invoke('merge_opencode_extras', { ops });
+}
+
+// ============ 测试服务商 URL ============
+
+export interface TestResult {
+  ok: boolean;
+  /** HTTP 状态码（连接失败时为 0） */
+  status: number;
+  message: string;
+  latencyMs: number;
+}
+
+/**
+ * 测试 provider URL 连通性
+ * - Anthropic 格式：POST {url}/v1/messages
+ * - OpenAI 格式：POST {url}/v1/chat/completions
+ * `model` 可选，不传则用内置默认测试模型
+ */
+export async function testProviderUrl(
+  url: string,
+  apiKey: string,
+  format: 'anthropic' | 'openai',
+  model?: string,
+): Promise<TestResult> {
+  return invoke('test_provider_url', { url, apiKey, format, model });
+}
+
+// ============ 云同步 ============
+
+/** 云同步载荷（v4 schema）：包含完整应用数据 — Profile + 服务商 + 行为开关 + 版本号 */
+export interface SyncPayload {
+  schemaVersion: 4;
+  /** 同步版本号：每次成功 upload 后 +1；用于云端/本地对比 */
+  version: number;
+  /** 服务商配置（含 API Key、URL、模型列表、模型能力） */
+  providers: Provider[];
+  profiles: Profile[];
+  activeProfileId: string | null;
+  claudeToggles: Partial<ClaudeToggles>;
+  opencodeToggles: Partial<OpenCodeToggles>;
+}
+
+/** 云端版本探测结果（轻量级，不下载完整 payload） */
+export interface CloudVersionInfo {
+  version: number | null;
+  /** profiles.json 不存在时为 true */
+  notFound: boolean;
+  /** 探测错误信息（token 失效 / 网络超时 / 解析失败等）。有值时其他字段无意义 */
+  error?: string;
+}
+
+/** 上传 Profile 数据到云端（profiles.json） */
+export async function syncUpload(payload: SyncPayload): Promise<string> {
+  return invoke('sync_upload', { payload });
+}
+
+/** 从云端下载 Profile 数据 */
+export async function syncDownload(): Promise<SyncPayload> {
   return invoke('sync_download');
+}
+
+/** 轻量级：仅查询云端 version（不下载 payload），用于启动/定时检查 */
+export async function syncCheckVersion(): Promise<CloudVersionInfo> {
+  return invoke('sync_check_version');
 }
 
 // ============ 版本更新 ============

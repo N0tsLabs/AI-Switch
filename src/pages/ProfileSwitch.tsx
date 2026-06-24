@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useProfileStore, type Profile } from '../stores/profileStore';
 import { useModelStore } from '../stores/modelStore';
-import { writeClaudeSettings, writeOpencodeAgents } from '../lib/tauri';
+import { mergeClaudeEnv, mergeOpencodeManaged } from '../lib/tauri';
 import { useToast } from '../components/useToast';
 
 export default function ProfileSwitch() {
@@ -74,26 +74,44 @@ export default function ProfileSwitch() {
 
   const [applying, setApplying] = useState<string | null>(null);
 
-  /** 应用方案：将 Profile 配置写入 Claude Code 和 OpenCode 配置文件 */
+  /** 应用方案：将 Profile 配置合并到 Claude Code 和 OpenCode 配置文件中
+   *  使用 key-level merge 命令，仅修改模型相关字段，保留本地其他 key */
   const handleApply = async (id: string) => {
     const profile = profiles.find((p) => p.id === id);
     if (!profile) return;
 
     setApplying(id);
     try {
-      // 1. 写入 Claude Code settings.json — 从服务商获取 API 信息
+      // 1. Claude Code settings.json — 校验 provider 填了 Anthropic URL
       const provider = providers.find((p) => p.id === profile.claude.providerId);
-      const claudeSettings: Record<string, unknown> = {};
-      const env: Record<string, string> = {};
-      if (provider?.url) env.ANTHROPIC_BASE_URL = provider.url;
-      if (provider?.apiKey) env.ANTHROPIC_AUTH_TOKEN = provider.apiKey;
-      if (profile.claude.enabledModel) env.ANTHROPIC_MODEL = profile.claude.enabledModel;
-      if (Object.keys(env).length > 0) claudeSettings.env = env;
-      if (Object.keys(claudeSettings).length > 0) {
-        await writeClaudeSettings(claudeSettings);
+      if (!provider) {
+        toast(`方案「${profile.name}」引用的服务商不存在（已删除？），无法应用`, 'error');
+        return;
       }
+      if (!provider.anthropicUrl) {
+        toast(
+          `方案「${profile.name}」引用的「${provider.name}」未填写 Anthropic URL，无法用于 Claude Code`,
+          'error',
+        );
+        return;
+      }
+      if (!provider.apiKey) {
+        toast(`「${provider.name}」缺少 API Key`, 'error');
+        return;
+      }
+      const env: Record<string, string> = {};
+      env.ANTHROPIC_BASE_URL = provider.anthropicUrl;
+      env.ANTHROPIC_AUTH_TOKEN = provider.apiKey;
+      if (profile.claude.enabledModel) {
+        // 若该模型在 modelStore 中标记了 context1M，自动追加 [1M] 后缀
+        const cap = provider.modelCapabilities[profile.claude.enabledModel];
+        env.ANTHROPIC_MODEL = cap?.context1M
+          ? `${profile.claude.enabledModel}[1M]`
+          : profile.claude.enabledModel;
+      }
+      await mergeClaudeEnv(env);
 
-      // 2. 写入 OpenCode oh-my-openagent.json
+      // 2. OpenCode oh-my-openagent.json — 仅合并 agents + categories 顶层字段
       if (profile.opencode.models.length > 0) {
         const agents: Record<string, unknown> = {};
         const categories: Record<string, unknown> = {};
@@ -101,9 +119,17 @@ export default function ProfileSwitch() {
 
         modelIds.forEach((modelId, i) => {
           const agentName = i === 0 ? 'primary' : `agent-${i}`;
+          // 从 modelStore 查能力
+          let cap = null;
+          for (const p of providers) {
+            if (p.modelCapabilities[modelId]) { cap = p.modelCapabilities[modelId]; break; }
+          }
           const modelStr = `opencode/${modelId}`;
           agents[agentName] = {
             model: modelStr,
+            ...(cap?.supportsImage ? { supports_image: true } : {}),
+            ...(cap?.supportsVideo ? { supports_video: true } : {}),
+            ...(cap?.context1M ? { context_length: '1M' } : {}),
             fallback_models: modelIds
               .filter((m) => m !== modelId)
               .slice(0, 2)
@@ -116,7 +142,7 @@ export default function ProfileSwitch() {
           fallback_models: modelIds.slice(1, 3).map((m) => ({ model: `opencode/${m}` })),
         };
 
-        await writeOpencodeAgents({ agents, categories });
+        await mergeOpencodeManaged({ agents, categories });
       }
 
       setActiveProfile(id);
@@ -188,11 +214,16 @@ export default function ProfileSwitch() {
                       <select value={editClaudeProviderId} onChange={(e) => handleProviderChange(e.target.value)}
                         className="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-xs text-white">
                         <option value="">未选择</option>
-                        {providers.map((p) => (
+                        {providers.filter((p) => !!p.anthropicUrl).map((p) => (
                           <option key={p.id} value={p.id}>{p.name}</option>
                         ))}
                       </select>
                     </div>
+                    {providers.filter((p) => !!p.anthropicUrl).length === 0 && (
+                      <p className="text-[10px] text-amber-400">
+                        ⚠ 暂无填了 Anthropic URL 的服务商，请到「模型设置」补充
+                      </p>
+                    )}
                     {selectedClaudeProvider && selectedClaudeProvider.models.length > 0 && (
                       <div>
                         <label className="block text-xs text-zinc-600 mb-0.5">选择模型</label>

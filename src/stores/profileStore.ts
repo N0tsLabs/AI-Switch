@@ -38,6 +38,8 @@ interface ProfileState {
   updateProfile: (id: string, p: Partial<Profile>) => void;
   removeProfile: (id: string) => void;
   setActiveProfile: (id: string) => void;
+  /** 整体替换 Profile 列表和 activeId（用于云同步下载） */
+  replaceAll: (profiles: Profile[], activeProfileId: string | null) => void;
   loadFromStorage: () => void;
   saveToStorage: () => void;
 }
@@ -73,6 +75,16 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
   setActiveProfile: (id) => {
     set({ activeProfileId: id });
     localStorage.setItem(ACTIVE_KEY, id);
+  },
+
+  replaceAll: (profiles, activeProfileId) => {
+    set({ profiles, activeProfileId });
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(profiles));
+    if (activeProfileId) {
+      localStorage.setItem(ACTIVE_KEY, activeProfileId);
+    } else {
+      localStorage.removeItem(ACTIVE_KEY);
+    }
   },
 
   loadFromStorage: () => {

@@ -329,8 +329,11 @@ async fn download_file(
 }
 
 /// 上传配置到云端
+///
+/// 入参：`{ schemaVersion: 4, version, providers, profiles, activeProfileId, claudeToggles, opencodeToggles }`
+/// 同步完整应用数据：服务商 + Profile + 行为开关。不再触碰本地配置文件 blob。
 #[tauri::command]
-pub async fn sync_upload() -> Result<String, String> {
+pub async fn sync_upload(payload: serde_json::Value) -> Result<String, String> {
     let token = load_token()?;
     let user_info = fetch_user_from_token(&token).await?;
     let client = reqwest::Client::new();
@@ -338,112 +341,165 @@ pub async fn sync_upload() -> Result<String, String> {
     // 确保仓库存在
     ensure_repo(&client, &token, &user_info.login).await?;
 
-    let home = dirs::home_dir().ok_or("无法获取主目录")?;
-    let mut uploaded = Vec::new();
-
-    // 上传 Claude settings.json
-    let claude_path = home.join(".claude").join("settings.json");
-    if claude_path.exists() {
-        let content = std::fs::read_to_string(&claude_path)
-            .map_err(|e| format!("读取 claude settings 失败: {}", e))?;
-        upload_file(
-            &client, &token, &user_info.login,
-            "claude/settings.json", &content, "Sync Claude Code settings"
-        ).await?;
-        uploaded.push("claude/settings.json");
+    // 校验 schema
+    let schema = payload
+        .get("schemaVersion")
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| "payload 缺少 schemaVersion".to_string())?;
+    if schema != 4 {
+        return Err(format!(
+            "不支持的 schemaVersion: {}（仅支持 4）",
+            schema
+        ));
     }
 
-    // 上传 Claude .mcp.json
-    let mcp_path = home.join(".claude").join(".mcp.json");
-    if mcp_path.exists() {
-        let content = std::fs::read_to_string(&mcp_path)
-            .map_err(|e| format!("读取 claude mcp 失败: {}", e))?;
-        upload_file(
-            &client, &token, &user_info.login,
-            "claude/.mcp.json", &content, "Sync Claude Code MCP config"
-        ).await?;
-        uploaded.push("claude/.mcp.json");
-    }
+    let content = serde_json::to_string_pretty(&payload)
+        .map_err(|e| format!("序列化 payload 失败: {}", e))?;
 
-    // 上传 OpenCode oh-my-openagent.json
-    let opencode_path = home.join(".config").join("opencode").join("oh-my-openagent.json");
-    if opencode_path.exists() {
-        let content = std::fs::read_to_string(&opencode_path)
-            .map_err(|e| format!("读取 opencode agents 失败: {}", e))?;
-        upload_file(
-            &client, &token, &user_info.login,
-            "opencode/oh-my-openagent.json", &content, "Sync OpenCode agents config"
-        ).await?;
-        uploaded.push("opencode/oh-my-openagent.json");
-    }
+    upload_file(
+        &client,
+        &token,
+        &user_info.login,
+        "profiles.json",
+        &content,
+        "Sync AI-Switch profiles",
+    )
+    .await?;
 
-    // 上传 OpenCode opencode.json
-    let opencode_cfg = home.join(".config").join("opencode").join("opencode.json");
-    if opencode_cfg.exists() {
-        let content = std::fs::read_to_string(&opencode_cfg)
-            .map_err(|e| format!("读取 opencode config 失败: {}", e))?;
-        upload_file(
-            &client, &token, &user_info.login,
-            "opencode/opencode.json", &content, "Sync OpenCode config"
-        ).await?;
-        uploaded.push("opencode/opencode.json");
-    }
-
-    Ok(format!("已上传 {} 个文件到 {}/{}", uploaded.len(), user_info.login, REPO_NAME))
+    Ok(format!(
+        "已上传到 {}/{} (profiles.json)",
+        user_info.login, REPO_NAME
+    ))
 }
 
 /// 从云端拉取配置
 #[tauri::command]
-pub async fn sync_download() -> Result<String, String> {
+pub async fn sync_download() -> Result<serde_json::Value, String> {
     let token = load_token()?;
     let user_info = fetch_user_from_token(&token).await?;
     let client = reqwest::Client::new();
-    let home = dirs::home_dir().ok_or("无法获取主目录")?;
-    let mut downloaded = Vec::new();
 
-    // 拉取 Claude settings.json
-    match download_file(&client, &token, &user_info.login, "claude/settings.json").await {
-        Ok(content) => {
-            let path = home.join(".claude").join("settings.json");
-            std::fs::create_dir_all(path.parent().unwrap()).ok();
-            std::fs::write(&path, content).map_err(|e| format!("写入 claude settings 失败: {}", e))?;
-            downloaded.push("claude/settings.json");
+    let content = match download_file(
+        &client,
+        &token,
+        &user_info.login,
+        "profiles.json",
+    )
+    .await
+    {
+        Ok(c) => c,
+        Err(_) => {
+            return Err(
+                "云端仓库没有 profiles.json，可能是旧版数据。请在原始机器上点击「上传到云端」覆盖一次。"
+                    .to_string(),
+            );
         }
-        Err(e) => eprintln!("跳过 claude/settings.json: {}", e),
+    };
+
+    let payload: serde_json::Value = serde_json::from_str(&content)
+        .map_err(|e| format!("解析 profiles.json 失败: {}", e))?;
+
+    let schema = payload
+        .get("schemaVersion")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    if schema != 4 {
+        return Err(format!(
+            "云端 schemaVersion 不匹配：{}（需要 4）。v3 旧数据请先用旧版本客户端上传一次升级。",
+            schema
+        ));
     }
 
-    // 拉取 Claude .mcp.json
-    match download_file(&client, &token, &user_info.login, "claude/.mcp.json").await {
-        Ok(content) => {
-            let path = home.join(".claude").join(".mcp.json");
-            std::fs::write(&path, content).map_err(|e| format!("写入 claude mcp 失败: {}", e))?;
-            downloaded.push("claude/.mcp.json");
-        }
-        Err(e) => eprintln!("跳过 claude/.mcp.json: {}", e),
-    }
+    Ok(payload)
+}
 
-    // 拉取 OpenCode oh-my-openagent.json
-    match download_file(&client, &token, &user_info.login, "opencode/oh-my-openagent.json").await {
-        Ok(content) => {
-            let path = home.join(".config").join("opencode").join("oh-my-openagent.json");
-            std::fs::create_dir_all(path.parent().unwrap()).ok();
-            std::fs::write(&path, content).map_err(|e| format!("写入 opencode agents 失败: {}", e))?;
-            downloaded.push("opencode/oh-my-openagent.json");
-        }
-        Err(e) => eprintln!("跳过 opencode/oh-my-openagent.json: {}", e),
-    }
+/// 轻量级版本探测：从云端 profiles.json 读取 version 字段，不下载完整 payload
+/// 用于启动/定时检查云端是否有更新
+#[derive(Serialize)]
+pub struct CloudVersionInfo {
+    /// 云端当前 version（profiles.json 不存在或解析失败时为 None）
+    pub version: Option<u64>,
+    /// profiles.json 不存在
+    pub not_found: bool,
+    /// 探测过程中的错误（如 token 失效、网络失败）。有值时 version/not_found 无意义
+    pub error: Option<String>,
+}
 
-    // 拉取 OpenCode opencode.json
-    match download_file(&client, &token, &user_info.login, "opencode/opencode.json").await {
-        Ok(content) => {
-            let path = home.join(".config").join("opencode").join("opencode.json");
-            std::fs::write(&path, content).map_err(|e| format!("写入 opencode config 失败: {}", e))?;
-            downloaded.push("opencode/opencode.json");
-        }
-        Err(e) => eprintln!("跳过 opencode/opencode.json: {}", e),
+#[tauri::command]
+pub async fn sync_check_version() -> Result<CloudVersionInfo, String> {
+    // 8 秒总超时，避免前端永远停在「探测中」
+    let fut = sync_check_version_inner();
+    match tokio::time::timeout(std::time::Duration::from_secs(8), fut).await {
+        Ok(result) => result,
+        Err(_) => Ok(CloudVersionInfo {
+            version: None,
+            not_found: false,
+            error: Some("请求超时（8s）".to_string()),
+        }),
     }
+}
 
-    Ok(format!("已从云端拉取 {} 个文件", downloaded.len()))
+async fn sync_check_version_inner() -> Result<CloudVersionInfo, String> {
+    // 任何内部错误都转成 Ok(error=...) 返回，前端能看到具体原因
+    let token = match load_token() {
+        Ok(t) => t,
+        Err(e) => {
+            return Ok(CloudVersionInfo {
+                version: None,
+                not_found: false,
+                error: Some(format!("token: {}", e)),
+            });
+        }
+    };
+
+    let user_info = match fetch_user_from_token(&token).await {
+        Ok(u) => u,
+        Err(e) => {
+            return Ok(CloudVersionInfo {
+                version: None,
+                not_found: false,
+                error: Some(format!("GitHub 用户: {}", e)),
+            });
+        }
+    };
+
+    let client = reqwest::Client::new();
+
+    let content = match download_file(
+        &client,
+        &token,
+        &user_info.login,
+        "profiles.json",
+    )
+    .await
+    {
+        Ok(c) => c,
+        Err(_) => {
+            return Ok(CloudVersionInfo {
+                version: None,
+                not_found: true,
+                error: None,
+            });
+        }
+    };
+
+    let payload: serde_json::Value = match serde_json::from_str(&content) {
+        Ok(v) => v,
+        Err(e) => {
+            return Ok(CloudVersionInfo {
+                version: None,
+                not_found: false,
+                error: Some(format!("profiles.json 解析失败: {}", e)),
+            });
+        }
+    };
+
+    let version = payload.get("version").and_then(|v| v.as_u64());
+    Ok(CloudVersionInfo {
+        version,
+        not_found: false,
+        error: None,
+    })
 }
 
 // ============ 版本更新检查 ============

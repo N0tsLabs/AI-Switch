@@ -1,12 +1,20 @@
 import { useState } from 'react';
 import { useModelStore, type Provider } from '../stores/modelStore';
-import { fetchOpenaiModels } from '../lib/tauri';
+import { fetchOpenaiModels, testProviderUrl, type TestResult } from '../lib/tauri';
 import { useToast } from '../components/useToast';
 
 function ProviderForm({ onSave, initial }: { onSave: (p: Provider) => void; initial?: Provider }) {
   const [name, setName] = useState(initial?.name || '');
-  const [openaiUrl, setOpenaiUrl] = useState(initial?.apiFormat === 'openai' ? (initial?.url || '') : '');
-  const [anthropicUrl, setAnthropicUrl] = useState(initial?.apiFormat === 'anthropic' ? (initial?.url || '') : '');
+  // 双 URL 字段：Anthropic 用于 ClaudeCode，OpenAI 用于 OpenCode
+  // 旧版 Provider 有单一 url 字段，从这里迁移到对应格式
+  const initAnthropicUrl = initial?.anthropicUrl
+    ?? (initial?.apiFormat === 'anthropic' ? initial?.url : '')
+    ?? '';
+  const initOpenaiUrl = initial?.openaiUrl
+    ?? (initial?.apiFormat === 'openai' ? initial?.url : '')
+    ?? '';
+  const [anthropicUrl, setAnthropicUrl] = useState(initAnthropicUrl);
+  const [openaiUrl, setOpenaiUrl] = useState(initOpenaiUrl);
   const [apiKey, setApiKey] = useState(initial?.apiKey || '');
 
   // 已保存的模型列表
@@ -21,7 +29,34 @@ function ProviderForm({ onSave, initial }: { onSave: (p: Provider) => void; init
   const [error, setError] = useState('');
   const [newModel, setNewModel] = useState('');
 
-  // 获取模型列表（不自动添加，只展示待选）
+  // URL 连通性测试状态
+  const [openaiTest, setOpenaiTest] = useState<'idle' | 'testing' | TestResult>('idle');
+  const [anthropicTest, setAnthropicTest] = useState<'idle' | 'testing' | TestResult>('idle');
+
+  const handleTestUrl = async (format: 'openai' | 'anthropic') => {
+    const targetUrl = format === 'openai' ? openaiUrl : anthropicUrl;
+    if (!targetUrl) {
+      toast('请先填写 URL', 'error');
+      return;
+    }
+    const setter = format === 'openai' ? setOpenaiTest : setAnthropicTest;
+    setter('testing');
+    try {
+      // 优先用第一个模型，没有则用后端默认
+      const firstModel = models[0];
+      const result = await testProviderUrl(targetUrl, apiKey, format, firstModel);
+      setter(result);
+    } catch (e) {
+      setter({
+        ok: false,
+        status: 0,
+        message: String(e),
+        latencyMs: 0,
+      });
+    }
+  };
+
+  // 获取模型列表（OpenAI 端点专用）
   const handleFetchModels = async () => {
     if (!openaiUrl) { setError('请先填写 OpenAI 格式 URL'); return; }
     setLoading(true);
@@ -115,13 +150,11 @@ function ProviderForm({ onSave, initial }: { onSave: (p: Provider) => void; init
 
   const handleSave = () => {
     if (!name.trim()) return;
-    const url = openaiUrl || anthropicUrl;
-    const apiFormat = openaiUrl ? 'openai' : 'anthropic';
     onSave({
       id: initial?.id || '',
       name: name.trim(),
-      apiFormat,
-      url,
+      anthropicUrl: anthropicUrl.trim() || undefined,
+      openaiUrl: openaiUrl.trim() || undefined,
       apiKey,
       models,
       modelCapabilities: caps,
@@ -137,19 +170,42 @@ function ProviderForm({ onSave, initial }: { onSave: (p: Provider) => void; init
           className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500" />
       </div>
 
-      {/* 双 URL */}
+      {/* 双 URL：OpenAI 用于 OpenCode，Anthropic 用于 ClaudeCode。按需填写 */}
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="block text-xs text-zinc-500 mb-1">OpenAI 格式 URL <span className="text-zinc-600">（支持读取模型列表）</span></label>
-          <input value={openaiUrl} onChange={(e) => setOpenaiUrl(e.target.value)} placeholder="https://api.openai.com"
-            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500" />
+          <label className="block text-xs text-zinc-500 mb-1">
+            OpenAI 格式 URL <span className="text-zinc-600">（用于 OpenCode）</span>
+          </label>
+          <div className="flex gap-2">
+            <input value={openaiUrl} onChange={(e) => setOpenaiUrl(e.target.value)}
+              placeholder="https://api.openai.com/v1"
+              className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500" />
+            <button type="button" onClick={() => handleTestUrl('openai')}
+              disabled={!openaiUrl || openaiTest === 'testing'}
+              className="shrink-0 px-3 py-2 bg-zinc-700 hover:bg-zinc-600 disabled:bg-zinc-800 disabled:text-zinc-600 text-white text-xs rounded-lg transition-colors">
+              {openaiTest === 'testing' ? '测试中…' : '测试'}
+            </button>
+          </div>
+          <TestResultRow result={openaiTest} />
         </div>
         <div>
-          <label className="block text-xs text-zinc-500 mb-1">Anthropic 格式 URL <span className="text-zinc-600">（填写任一即可）</span></label>
-          <input value={anthropicUrl} onChange={(e) => setAnthropicUrl(e.target.value)} placeholder="https://api.anthropic.com"
-            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500" />
+          <label className="block text-xs text-zinc-500 mb-1">
+            Anthropic 格式 URL <span className="text-zinc-600">（用于 Claude Code）</span>
+          </label>
+          <div className="flex gap-2">
+            <input value={anthropicUrl} onChange={(e) => setAnthropicUrl(e.target.value)}
+              placeholder="https://api.anthropic.com"
+              className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500" />
+            <button type="button" onClick={() => handleTestUrl('anthropic')}
+              disabled={!anthropicUrl || anthropicTest === 'testing'}
+              className="shrink-0 px-3 py-2 bg-zinc-700 hover:bg-zinc-600 disabled:bg-zinc-800 disabled:text-zinc-600 text-white text-xs rounded-lg transition-colors">
+              {anthropicTest === 'testing' ? '测试中…' : '测试'}
+            </button>
+          </div>
+          <TestResultRow result={anthropicTest} />
         </div>
       </div>
+      <p className="text-[10px] text-zinc-600 -mt-2">按需填写：只填 ClaudeCode 要用的填 Anthropic URL，只填 OpenCode 要用的填 OpenAI URL。一个服务商可同时填两个。</p>
 
       {/* API Key */}
       <div>
@@ -158,12 +214,12 @@ function ProviderForm({ onSave, initial }: { onSave: (p: Provider) => void; init
           className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500" />
       </div>
 
-      {/* 上下文长度（仅 Anthropic 格式） */}
+      {/* 上下文长度提示（仅 Anthropic） */}
       {anthropicUrl && (
-        <p className="text-[10px] text-zinc-600">Anthropic 模型支持勾选 1M 上下文，模型名会自动拼接 [1M] 后缀</p>
+        <p className="text-[10px] text-zinc-600 -mt-2">Anthropic 模型支持勾选 1M 上下文，模型名会自动拼接 [1M] 后缀</p>
       )}
 
-      {/* 读取模型列表 */}
+      {/* 读取模型列表（OpenAI 端点） */}
       <div className="flex gap-2 items-center">
         <button onClick={handleFetchModels} disabled={loading}
           className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-700 text-white text-sm rounded-lg transition-colors">
@@ -248,7 +304,7 @@ function ProviderForm({ onSave, initial }: { onSave: (p: Provider) => void; init
       )}
 
       <div className="flex justify-end pt-2">
-        <button onClick={handleSave} disabled={!name.trim() || (!openaiUrl && !anthropicUrl)}
+        <button onClick={handleSave} disabled={!name.trim() || (!anthropicUrl && !openaiUrl)}
           className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-zinc-700 text-white text-sm rounded-lg transition-colors">
           保存
         </button>
@@ -262,6 +318,41 @@ export default function ModelSettings() {
   const { toast } = useToast();
   const [editing, setEditing] = useState<string | null>(null);
   const [showNew, setShowNew] = useState(false);
+
+  // 列表里每个 URL 的测试状态：{ providerId: 'idle' | 'testing' | TestResult }
+  const [openaiTests, setOpenaiTests] = useState<Record<string, 'idle' | 'testing' | TestResult>>({});
+  const [anthropicTests, setAnthropicTests] = useState<Record<string, 'idle' | 'testing' | TestResult>>({});
+
+  const handleTestListUrl = async (
+    providerId: string,
+    p: Provider,
+    format: 'openai' | 'anthropic',
+  ) => {
+    const targetUrl = format === 'openai' ? p.openaiUrl : p.anthropicUrl;
+    if (!targetUrl) return;
+    const setter = format === 'openai' ? setOpenaiTests : setAnthropicTests;
+    setter((prev) => ({ ...prev, [providerId]: 'testing' }));
+    try {
+      const result = await testProviderUrl(targetUrl, p.apiKey, format, p.models[0]);
+      setter((prev) => ({ ...prev, [providerId]: result }));
+    } catch (e) {
+      setter((prev) => ({
+        ...prev,
+        [providerId]: { ok: false, status: 0, message: String(e), latencyMs: 0 },
+      }));
+    }
+  };
+
+  /** 测一个 provider 的所有 URL（并行） */
+  const handleTestAll = (p: Provider) => {
+    if (p.openaiUrl) handleTestListUrl(p.id, p, 'openai');
+    if (p.anthropicUrl) handleTestListUrl(p.id, p, 'anthropic');
+  };
+
+  /** 任意 URL 正在测试中 → 禁用「测试」按钮 */
+  const isAnyTesting = (providerId: string): boolean => {
+    return openaiTests[providerId] === 'testing' || anthropicTests[providerId] === 'testing';
+  };
 
   const handleSave = (p: Provider) => {
     if (editing) { updateProvider(editing, p); }
@@ -283,16 +374,32 @@ export default function ModelSettings() {
               <ProviderForm initial={p} onSave={handleSave} />
             ) : (
               <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex items-center justify-between">
-                <div>
+                <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-3">
                     <span className="font-medium text-white">{p.name}</span>
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400">{p.apiFormat === 'openai' ? 'OpenAI' : 'Anthropic'}</span>
+                    {p.openaiUrl && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-300">OpenAI</span>
+                    )}
+                    {p.anthropicUrl && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-300">Anthropic</span>
+                    )}
                     <span className="text-xs text-zinc-600">{p.models.length} 模型</span>
                   </div>
-                  <p className="text-xs text-zinc-500 mt-1 truncate max-w-lg">{p.url}</p>
+                  <div className="text-xs text-zinc-500 mt-1.5 space-y-1">
+                    {p.openaiUrl && (
+                      <ProviderUrlRow emoji="🟢" url={p.openaiUrl} test={openaiTests[p.id]} />
+                    )}
+                    {p.anthropicUrl && (
+                      <ProviderUrlRow emoji="🟣" url={p.anthropicUrl} test={anthropicTests[p.id]} />
+                    )}
+                  </div>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 shrink-0 ml-3">
                   <button onClick={() => setEditing(p.id)} className="text-xs text-zinc-400 hover:text-white px-2 py-1">编辑</button>
+                  <button onClick={() => handleTestAll(p)} disabled={isAnyTesting(p.id)}
+                    className="text-xs text-zinc-400 hover:text-white px-2 py-1 disabled:text-zinc-600">
+                    {isAnyTesting(p.id) ? '测试中…' : '测试'}
+                  </button>
                   <button onClick={() => { removeProvider(p.id); saveToStorage(); }} className="text-xs text-zinc-400 hover:text-red-400 px-2 py-1">删除</button>
                 </div>
               </div>
@@ -307,6 +414,67 @@ export default function ModelSettings() {
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+/** 显示单个 URL 的测试结果（idle = 不显示） */
+function TestResultRow({ result }: { result: 'idle' | 'testing' | TestResult }) {
+  if (result === 'idle') return null;
+  if (result === 'testing') {
+    return (
+      <p className="text-[10px] text-zinc-500 mt-1.5 flex items-center gap-1.5">
+        <span className="w-2.5 h-2.5 border border-zinc-500 border-t-transparent rounded-full animate-spin" />
+        正在测试…
+      </p>
+    );
+  }
+  if (result.ok) {
+    return (
+      <p className="text-[10px] text-emerald-400 mt-1.5">
+        ✓ {result.message} · {result.latencyMs}ms
+      </p>
+    );
+  }
+  return (
+    <p className="text-[10px] text-red-400 mt-1.5 break-all">
+      ✗ {result.message}
+    </p>
+  );
+}
+
+/** 列表卡片中一行 URL：emoji + URL + 测试状态 */
+function ProviderUrlRow({
+  emoji,
+  url,
+  test,
+}: {
+  emoji: string;
+  url: string;
+  test: 'idle' | 'testing' | TestResult | undefined;
+}) {
+  let statusIcon = <span className="text-zinc-600">○</span>;
+  let statusText = '未测试';
+  if (test === 'testing') {
+    statusIcon = <span className="w-2.5 h-2.5 border border-zinc-400 border-t-transparent rounded-full animate-spin inline-block" />;
+    statusText = '测试中…';
+  } else if (test && test !== 'idle') {
+    if (test.ok) {
+      statusIcon = <span className="text-emerald-400">✓</span>;
+      statusText = `${test.latencyMs}ms`;
+    } else {
+      statusIcon = <span className="text-red-400">✗</span>;
+      statusText = `HTTP ${test.status || '?'}`;
+    }
+  }
+  return (
+    <div className="flex items-center gap-2">
+      <span className="shrink-0">{emoji}</span>
+      <span className="font-mono truncate flex-1 min-w-0" title={url}>{url}</span>
+      <span className="shrink-0 flex items-center gap-1 text-[10px] text-zinc-500">
+        {statusIcon}
+        <span>{statusText}</span>
+      </span>
     </div>
   );
 }

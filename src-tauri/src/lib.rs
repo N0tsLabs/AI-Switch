@@ -14,6 +14,16 @@ pub fn run() {
             commands::config::read_opencode_config,
             commands::config::read_opencode_agents,
             commands::config::write_opencode_agents,
+            // Key-level merge（仅动模型相关字段，保留其他 key）
+            commands::config::extract_claude_env,
+            commands::config::merge_claude_env,
+            commands::config::extract_opencode_managed,
+            commands::config::merge_opencode_managed,
+            // 任意路径读写（开关）
+            commands::config::merge_claude_extras,
+            commands::config::merge_opencode_extras,
+            // 测试服务商 URL
+            commands::config::test_provider_url,
             commands::config::get_config_paths,
             commands::config::read_local_configs,
             commands::config::detect_api_keys,
@@ -29,6 +39,7 @@ pub fn run() {
             github::github_logout,
             github::sync_upload,
             github::sync_download,
+            github::sync_check_version,
             github::check_update,
         ])
         .run(tauri::generate_context!())

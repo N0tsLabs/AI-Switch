@@ -1,13 +1,17 @@
 import { useState, useEffect, useRef } from 'react';
-import { deviceFlowStart, deviceFlowPoll, githubLogout, syncUpload, syncDownload, openUrl } from '../lib/tauri';
+import { deviceFlowStart, deviceFlowPoll, githubLogout, syncCheckVersion, openUrl } from '../lib/tauri';
 import { useToast } from '../components/useToast';
 import { useAuthStore } from '../stores/authStore';
+import { useSettingsStore } from '../stores/settingsStore';
+import { useCloudSync } from '../hooks/useCloudSync';
 
 type LoginStep = 'idle' | 'requesting' | 'waiting' | 'polling' | 'success' | 'error';
 
 export default function CloudSync() {
   const { toast } = useToast();
   const { user, loadUser, clearUser } = useAuthStore();
+  const lastSyncedVersion = useSettingsStore((s) => s.lastSyncedVersion);
+  const { syncUp, syncDown, isLoggedIn } = useCloudSync();
   const [step, setStep] = useState<LoginStep>('idle');
   const [userCode, setUserCode] = useState('');
   const [verifyUrl, setVerifyUrl] = useState('');
@@ -15,7 +19,40 @@ export default function CloudSync() {
   const [syncingUp, setSyncingUp] = useState(false);
   const [syncingDown, setSyncingDown] = useState(false);
   const [lastSync, setLastSync] = useState<string | null>(null);
+  const [cloudVersion, setCloudVersion] = useState<number | null>(null);
+  const [cloudNotFound, setCloudNotFound] = useState(false);
+  const [cloudError, setCloudError] = useState<string | null>(null);
+  const [cloudChecking, setCloudChecking] = useState(false);
   const stoppedRef = useRef(false);
+
+  // 进入页面时探测云端版本（轻量，不下载 payload）
+  useEffect(() => {
+    if (!user) {
+      setCloudVersion(null);
+      setCloudNotFound(false);
+      setCloudError(null);
+      return;
+    }
+    let cancelled = false;
+    const tick = async () => {
+      if (cancelled) return;
+      setCloudChecking(true);
+      try {
+        const info = await syncCheckVersion();
+        if (cancelled) return;
+        setCloudVersion(info.version);
+        setCloudNotFound(info.notFound);
+        setCloudError(info.error ?? null);
+      } catch (e) {
+        if (cancelled) return;
+        setCloudError('前端错误: ' + String(e));
+      } finally {
+        if (!cancelled) setCloudChecking(false);
+      }
+    };
+    tick();
+    return () => { cancelled = true; };
+  }, [user, lastSyncedVersion]);
 
   // 如果已登录，直接设为 success（用 ref 避免同步 setState 触发级联渲染）
   const hasSetSuccess = useRef(false);
@@ -80,28 +117,16 @@ export default function CloudSync() {
 
   const handleSyncUp = async () => {
     setSyncingUp(true);
-    try {
-      const msg = await syncUpload();
-      toast(msg, 'success');
-      setLastSync(new Date().toLocaleString());
-    } catch (e) {
-      toast('上传失败: ' + String(e), 'error');
-    } finally {
-      setSyncingUp(false);
-    }
+    const ok = await syncUp();
+    setSyncingUp(false);
+    if (ok) setLastSync(new Date().toLocaleString());
   };
 
   const handleSyncDown = async () => {
     setSyncingDown(true);
-    try {
-      const msg = await syncDownload();
-      toast(msg, 'success');
-      setLastSync(new Date().toLocaleString());
-    } catch (e) {
-      toast('拉取失败: ' + String(e), 'error');
-    } finally {
-      setSyncingDown(false);
-    }
+    const ok = await syncDown();
+    setSyncingDown(false);
+    if (ok) setLastSync(new Date().toLocaleString());
   };
 
   return (
@@ -110,6 +135,16 @@ export default function CloudSync() {
         <h1 className="text-xl font-semibold text-white">云同步</h1>
         <p className="text-sm text-zinc-500 mt-1">通过 GitHub 私有仓库同步配置</p>
       </div>
+
+      {/* 同步状态卡（始终显示） */}
+      <CloudSyncStatusCard
+        loggedIn={!!user}
+        cloudVersion={cloudVersion}
+        cloudNotFound={cloudNotFound}
+        lastSyncedVersion={lastSyncedVersion}
+        cloudError={cloudError}
+        cloudChecking={cloudChecking}
+      />
 
       {/* 账号状态 */}
       <div className="card">
@@ -207,8 +242,105 @@ export default function CloudSync() {
         <h2 className="text-sm font-medium text-zinc-400 mb-3">工作原理</h2>
         <div className="space-y-2 text-xs text-zinc-500">
           <div className="flex items-start gap-2"><span className="tag tag-zinc mt-0.5">1</span><span>首次同步自动创建 GitHub 私有仓库</span></div>
-          <div className="flex items-start gap-2"><span className="tag tag-zinc mt-0.5">2</span><span>完整配置保存（含 API Key），你自己的私有仓库</span></div>
-          <div className="flex items-start gap-2"><span className="tag tag-zinc mt-0.5">3</span><span>Token 存储在本地，不会上传</span></div>
+          <div className="flex items-start gap-2"><span className="tag tag-zinc mt-0.5">2</span><span>仅同步方案（Profile）数据；本地配置文件（permissions/hooks/MCP 等）保留不变</span></div>
+          <div className="flex items-start gap-2"><span className="tag tag-zinc mt-0.5">3</span><span>拉取后需点击「应用此方案」使配置生效</span></div>
+          <div className="flex items-start gap-2"><span className="tag tag-zinc mt-0.5">4</span><span>Token 存储在本地，不会上传</span></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** 同步状态卡（始终显示） */
+function CloudSyncStatusCard({
+  loggedIn,
+  cloudVersion,
+  cloudNotFound,
+  lastSyncedVersion,
+  cloudError,
+  cloudChecking,
+}: {
+  loggedIn: boolean;
+  cloudVersion: number | null;
+  cloudNotFound: boolean;
+  lastSyncedVersion: number | null;
+  cloudError: string | null;
+  cloudChecking: boolean;
+}) {
+  // 计算展示状态
+  let dotColor = 'bg-zinc-600';
+  let borderClass = 'border-zinc-800';
+  let bgClass = '';
+  let title = '未启用';
+  let desc = '连接 GitHub 后即可同步配置到私有仓库';
+  let badge: { text: string; className: string } | null = null;
+  let icon = '☁️';
+
+  if (loggedIn) {
+    if (cloudError) {
+      dotColor = 'bg-red-500';
+      borderClass = 'border-red-500/40';
+      bgClass = 'bg-red-500/5';
+      title = '检查失败';
+      desc = cloudError;
+      icon = '⚠️';
+    } else if (cloudChecking) {
+      dotColor = 'bg-zinc-500';
+      title = '正在检查云端版本…';
+      desc = '读取 GitHub 私有仓库的 profiles.json';
+      icon = '⏳';
+    } else if (cloudNotFound) {
+      dotColor = 'bg-amber-500';
+      borderClass = 'border-amber-500/40';
+      bgClass = 'bg-amber-500/5';
+      title = '云端尚无备份';
+      desc = '点击下方「↑ 上传到云端」创建首次备份';
+      badge = { text: '首次同步', className: 'bg-amber-500/15 text-amber-400' };
+      icon = '☁️';
+    } else {
+      // cloudVersion 可能为 null（旧数据无 version 字段），按 0 处理
+      const cv = cloudVersion ?? 0;
+      if (lastSyncedVersion === null) {
+        dotColor = 'bg-amber-500';
+        borderClass = 'border-amber-500/40';
+        bgClass = 'bg-amber-500/5';
+        title = `云端有备份（v${cv}）`;
+        desc = '本地从未同步过，建议先「↓ 从云端拉取」';
+        badge = { text: '待同步', className: 'bg-amber-500/15 text-amber-400' };
+        icon = '🔔';
+      } else if (cv > lastSyncedVersion) {
+        dotColor = 'bg-amber-500';
+        borderClass = 'border-amber-500/40';
+        bgClass = 'bg-amber-500/5';
+        title = `云端有新版本（v${cv}，本地 v${lastSyncedVersion}）`;
+        desc = '其他设备上传了更新，点击下方「↓ 从云端拉取」';
+        badge = { text: '待同步', className: 'bg-amber-500/15 text-amber-400' };
+        icon = '🔔';
+      } else {
+        dotColor = 'bg-emerald-500';
+        title = `已同步到 v${cv}`;
+        desc = `本地与云端一致（上次同步：${lastSyncedVersion}）`;
+        badge = { text: '最新', className: 'bg-emerald-500/15 text-emerald-400' };
+        icon = '✓';
+      }
+    }
+  }
+
+  return (
+    <div className={`card border ${borderClass} ${bgClass}`}>
+      <div className="flex items-start gap-3">
+        <span className="text-xl shrink-0">{icon}</span>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className={`w-2 h-2 rounded-full shrink-0 ${dotColor}`} />
+            <span className="text-sm text-zinc-200 font-medium">{title}</span>
+            {badge && (
+              <span className={`text-[10px] px-2 py-0.5 rounded-full ${badge.className}`}>
+                {badge.text}
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-zinc-500 mt-1.5">{desc}</p>
         </div>
       </div>
     </div>

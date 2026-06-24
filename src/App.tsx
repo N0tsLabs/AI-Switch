@@ -1,7 +1,8 @@
-import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { useEffect, useRef } from 'react';
 import Layout from './components/Layout';
 import { ToastProvider } from './components/Toast';
+import { useToast } from './components/useToast';
 import Dashboard from './pages/Dashboard';
 import ModelSettings from './pages/ModelSettings';
 import AgentTools from './pages/AgentTools';
@@ -11,6 +12,8 @@ import { useModelStore } from './stores/modelStore';
 import { useProfileStore } from './stores/profileStore';
 import { useAuthStore } from './stores/authStore';
 import { useUpdateStore } from './stores/updateStore';
+import { useSettingsStore } from './stores/settingsStore';
+import { syncCheckVersion } from './lib/tauri';
 
 /** 页面切换动画包装器 */
 function PageTransition({ children }: { children: React.ReactNode }) {
@@ -38,15 +41,17 @@ function PageTransition({ children }: { children: React.ReactNode }) {
 function AppInner() {
   const loadModels = useModelStore((s) => s.loadFromStorage);
   const loadProfiles = useProfileStore((s) => s.loadFromStorage);
+  const loadSettings = useSettingsStore((s) => s.loadFromStorage);
   const loadUser = useAuthStore((s) => s.loadUser);
   const checkUpdate = useUpdateStore((s) => s.check);
 
   useEffect(() => {
     loadModels();
     loadProfiles();
+    loadSettings();
     loadUser();
     checkUpdate();
-  }, [loadModels, loadProfiles, loadUser, checkUpdate]);
+  }, [loadModels, loadProfiles, loadSettings, loadUser, checkUpdate]);
 
   return (
     <ToastProvider>
@@ -61,10 +66,53 @@ function AppInner() {
               <Route path="/sync" element={<CloudSync />} />
             </Routes>
           </PageTransition>
+          {/* 必须在 Router 内部才能使用 useNavigate */}
+          <CloudSyncWatcher />
         </Layout>
       </BrowserRouter>
     </ToastProvider>
   );
+}
+
+/** 启动 + 每小时检查云端版本，必要时弹出"前往同步"toast */
+function CloudSyncWatcher() {
+  const user = useAuthStore((s) => s.user);
+  const { toast } = useToast();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!user) return;
+
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const info = await syncCheckVersion();
+        if (cancelled) return;
+        if (info.notFound) return;
+        // 旧版数据无 version 字段时按 v0 处理
+        const cv = info.version ?? 0;
+        const lastSynced = useSettingsStore.getState().lastSyncedVersion ?? 0;
+        if (cv > lastSynced) {
+          toast(
+            `云端有新版本（v${cv}，本地 v${lastSynced}）`,
+            'info',
+            { action: { label: '前往同步', onClick: () => navigate('/sync') } },
+          );
+        }
+      } catch { /* 未登录或网络错误，忽略 */ }
+    };
+
+    const initialTimer = setTimeout(tick, 1500);
+    const id = setInterval(tick, 60 * 60 * 1000);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(initialTimer);
+      clearInterval(id);
+    };
+  }, [user, toast, navigate]);
+
+  return null;
 }
 
 export default function App() {
