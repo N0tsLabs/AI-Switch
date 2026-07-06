@@ -80,6 +80,8 @@ interface SettingsState {
   claudeSelectedProviderId: string | null;
   /** Claude Code 四个模型变体（持久化到 localStorage） */
   claudeModels: { default: string; sonnet: string; opus: string; haiku: string };
+  /** 全局同步弹窗开关：true = SyncModal 渲染（侧边栏 / toast 都能触发） */
+  syncModalOpen: boolean;
 
   /** 设置单个 Claude toggle 的值 */
   setClaudeToggle: <K extends keyof ClaudeToggles>(key: K, value: ClaudeToggles[K]) => void;
@@ -96,6 +98,9 @@ interface SettingsState {
   setClaudeSelectedProviderId: (id: string | null) => void;
   /** 设置 Claude Code 模型变体 */
   setClaudeModels: (m: Partial<{ default: string; sonnet: string; opus: string; haiku: string }>) => void;
+
+  /** 切换全局同步弹窗显示 */
+  setSyncModalOpen: (open: boolean) => void;
 
   /** 整体替换（用于云同步下载）。空值保持默认 */
   replaceAll: (data: {
@@ -128,6 +133,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   lastSyncedSnapshot: null,
   claudeSelectedProviderId: null,
   claudeModels: { ...DEFAULT_CLAUDE_MODELS },
+  syncModalOpen: false,
 
   setClaudeToggle: (key, value) => {
     set((s) => ({ claude: { ...s.claude, [key]: value } }));
@@ -157,6 +163,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setClaudeModels: (m) => {
     set((s) => ({ claudeModels: { ...s.claudeModels, ...m } }));
     get().saveToStorage();
+  },
+
+  setSyncModalOpen: (open) => {
+    set({ syncModalOpen: open });
   },
 
   replaceAll: (data) => {

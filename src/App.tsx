@@ -1,8 +1,9 @@
-import { BrowserRouter, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { useEffect, useRef } from 'react';
 import Layout from './components/Layout';
 import { ToastProvider } from './components/Toast';
 import { useToast } from './components/useToast';
+import { SyncModal } from './components/SyncModal';
 import Dashboard from './pages/Dashboard';
 import ModelSettings from './pages/ModelSettings';
 import AgentTools from './pages/AgentTools';
@@ -70,15 +71,16 @@ function AppInner() {
           <CloudSyncWatcher />
         </Layout>
       </BrowserRouter>
+      {/* 全局同步弹窗，由 settingsStore.syncModalOpen 控制 */}
+      <SyncModal />
     </ToastProvider>
   );
 }
 
-/** 启动 + 每小时检查云端版本，必要时弹出"前往同步"toast */
+/** 启动 + 每小时检查云端版本，必要时弹出 toast 提示打开 SyncModal */
 function CloudSyncWatcher() {
   const user = useAuthStore((s) => s.user);
   const { toast } = useToast();
-  const navigate = useNavigate();
 
   useEffect(() => {
     if (!user) return;
@@ -93,11 +95,21 @@ function CloudSyncWatcher() {
         const cv = info.version ?? 0;
         const lastSynced = useSettingsStore.getState().lastSyncedVersion ?? 0;
         if (cv > lastSynced) {
-          toast(
-            `云端有新版本（v${cv}，本地 v${lastSynced}）`,
-            'info',
-            { action: { label: '前往同步', onClick: () => navigate('/sync') } },
-          );
+          // 缓存云端 version 给 SyncModal 用
+          localStorage.setItem('ai-switch-cloud-version', String(cv));
+          // 已在 /sync 页面就不打扰
+          if (!window.location.pathname.startsWith('/sync')) {
+            toast(
+              `云端有新版本（v${cv}，本地 v${lastSynced}）`,
+              'info',
+              {
+                action: {
+                  label: '打开同步',
+                  onClick: () => useSettingsStore.getState().setSyncModalOpen(true),
+                },
+              },
+            );
+          }
         }
       } catch { /* 未登录或网络错误，忽略 */ }
     };
@@ -110,7 +122,7 @@ function CloudSyncWatcher() {
       clearTimeout(initialTimer);
       clearInterval(id);
     };
-  }, [user, toast, navigate]);
+  }, [user, toast]);
 
   return null;
 }
