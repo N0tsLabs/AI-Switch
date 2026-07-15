@@ -1,5 +1,6 @@
 mod commands;
 mod github;
+mod tests;
 
 pub fn run() {
     tauri::Builder::default()

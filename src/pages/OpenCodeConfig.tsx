@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { useModelStore } from '../stores/modelStore';
 import { useSettingsStore, type OpenCodeToggles } from '../stores/settingsStore';
+import { buildOpenCodeAgents } from '../utils/opencodeAgents';
 import {
   readOpencodeAgents,
   mergeOpencodeManaged,
@@ -103,31 +105,7 @@ export default function OpenCodeConfig() {
   // 保存到 oh-my-openagent.json
   const handleSave = async () => {
     try {
-      const agents: Record<string, unknown> = {};
-      const categories: Record<string, unknown> = {};
-
-      modelIds.forEach((modelId, i) => {
-        const agentName = i === 0 ? 'primary' : `agent-${i}`;
-        const cap = getModelCap(modelId);
-        const modelStr = `opencode/${modelId}`;
-        agents[agentName] = {
-          model: modelStr,
-          ...(cap?.supportsImage ? { supports_image: true } : {}),
-          ...(cap?.supportsVideo ? { supports_video: true } : {}),
-          ...(cap?.context1M ? { context_length: '1M' } : {}),
-          fallback_models: modelIds
-            .filter((m) => m !== modelId)
-            .slice(0, 2)
-            .map((m) => ({ model: `opencode/${m}` })),
-        };
-      });
-
-      if (modelIds.length > 0) {
-        categories['default'] = {
-          model: `opencode/${modelIds[0]}`,
-          fallback_models: modelIds.slice(1, 3).map((m) => ({ model: `opencode/${m}` })),
-        };
-      }
+      const { agents, categories } = buildOpenCodeAgents(modelIds, providers);
 
       // 1. 用 key-level merge：仅合并 agents + categories，保留其他顶层字段
       await mergeOpencodeManaged({ agents, categories });
@@ -202,7 +180,6 @@ export default function OpenCodeConfig() {
     try {
       setEditorContent(JSON.stringify(JSON.parse(editorContent), null, 2));
       setEditorError('');
-      setEditorDirty(false);
     } catch (e) { setEditorError('JSON 格式错误: ' + String(e)); }
   };
 
@@ -251,7 +228,7 @@ export default function OpenCodeConfig() {
         <section className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 space-y-3">
           <h2 className="text-sm font-medium text-zinc-400">可用模型（点击添加）</h2>
           {allModels.length === 0 ? (
-            <p className="text-xs text-zinc-500">请先在<a href="/models" className="text-blue-400 hover:underline">模型设置</a>中添加服务商</p>
+            <p className="text-xs text-zinc-500">请先在<Link to="/models" className="text-blue-400 hover:underline">模型设置</Link>中添加服务商</p>
           ) : (
             <div className="space-y-1 max-h-60 overflow-y-auto">
               {allModels.map((m) => {

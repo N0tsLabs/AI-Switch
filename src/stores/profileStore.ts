@@ -55,22 +55,36 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
   profiles: [],
   activeProfileId: null,
 
-  addProfile: (p) => set((s) => {
+  addProfile: (p) => {
+    const { profiles } = get();
     const now = Date.now();
     const profile: Profile = { ...p, id: genId(), createdAt: now, updatedAt: now };
-    return { profiles: [...s.profiles, profile] };
-  }),
+    const next = [...profiles, profile];
+    set({ profiles: next });
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  },
 
-  updateProfile: (id, partial) => set((s) => ({
-    profiles: s.profiles.map((p) =>
+  updateProfile: (id, partial) => {
+    const { profiles } = get();
+    const next = profiles.map((p) =>
       p.id === id ? { ...p, ...partial, updatedAt: Date.now() } : p
-    ),
-  })),
+    );
+    set({ profiles: next });
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  },
 
-  removeProfile: (id) => set((s) => ({
-    profiles: s.profiles.filter((p) => p.id !== id),
-    activeProfileId: s.activeProfileId === id ? null : s.activeProfileId,
-  })),
+  removeProfile: (id) => {
+    const { profiles, activeProfileId } = get();
+    const next = profiles.filter((p) => p.id !== id);
+    const newActive = activeProfileId === id ? null : activeProfileId;
+    set({ profiles: next, activeProfileId: newActive });
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    if (newActive) {
+      localStorage.setItem(ACTIVE_KEY, newActive);
+    } else {
+      localStorage.removeItem(ACTIVE_KEY);
+    }
+  },
 
   setActiveProfile: (id) => {
     set({ activeProfileId: id });

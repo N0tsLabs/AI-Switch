@@ -29,27 +29,10 @@ export default function AgentTools() {
         ))}
       </div>
 
-      {/* 内容区 + 渐变动画 */}
+      {/* 内容区 */}
       <div className="relative">
-        {tabs.map((tab) => (
-          <div
-            key={tab.id}
-            className="transition-all duration-300 ease-out"
-            style={{
-              position: active === tab.id ? 'relative' : 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              opacity: active === tab.id ? 1 : 0,
-              transform: active === tab.id ? 'translateX(0) scale(1)' : 'translateX(12px) scale(0.99)',
-              pointerEvents: active === tab.id ? 'auto' : 'none',
-              zIndex: active === tab.id ? 1 : 0,
-            }}
-          >
-            {tab.id === 'claude' && <ClaudeCode />}
-            {tab.id === 'opencode' && <OpenCodeConfig />}
-          </div>
-        ))}
+        {active === 'claude' && <ClaudeCode />}
+        {active === 'opencode' && <OpenCodeConfig />}
       </div>
     </div>
   );

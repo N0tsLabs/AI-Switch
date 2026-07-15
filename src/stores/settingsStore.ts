@@ -108,6 +108,8 @@ interface SettingsState {
     opencode?: Partial<OpenCodeToggles>;
     lastSyncedVersion?: number | null;
     lastSyncedSnapshot?: PayloadData | null;
+    /** 若提供，在 set 回调内调用（此时新 toggles 已就绪），返回值写入 lastSyncedSnapshot */
+    buildSnapshot?: (newClaude: ClaudeToggles, newOpencode: OpenCodeToggles) => PayloadData;
   }) => void;
 
   /** 从 localStorage 加载 */
@@ -187,13 +189,19 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
           }
         }
       }
+      const nextLastSyncedSnapshot =
+        data.lastSyncedSnapshot !== undefined
+          ? data.lastSyncedSnapshot
+          : data.buildSnapshot
+            ? data.buildSnapshot(nextClaude, nextOpencode)
+            : s.lastSyncedSnapshot;
+
       return {
         claude: nextClaude,
         opencode: nextOpencode,
         lastSyncedVersion:
           data.lastSyncedVersion !== undefined ? data.lastSyncedVersion : s.lastSyncedVersion,
-        lastSyncedSnapshot:
-          data.lastSyncedSnapshot !== undefined ? data.lastSyncedSnapshot : s.lastSyncedSnapshot,
+        lastSyncedSnapshot: nextLastSyncedSnapshot,
       };
     });
     get().saveToStorage();
@@ -215,7 +223,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       }
       if (data.opencode && typeof data.opencode === 'object') {
         for (const [k, v] of Object.entries(data.opencode)) {
-          if (isOpencodeTogglesKey(k)) {
+          if (k === 'snapshot' && typeof v === 'boolean') {
+            (opencode as Record<string, unknown>)[k] = v;
+          } else if (k === 'share' && ['manual', 'auto', 'disabled'].includes(v as string)) {
+            (opencode as Record<string, unknown>)[k] = v;
+          } else if (k === 'autoupdate' && ['off', 'notify', 'on'].includes(v as string)) {
             (opencode as Record<string, unknown>)[k] = v;
           }
         }

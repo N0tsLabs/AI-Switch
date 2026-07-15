@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { useModelStore } from '../stores/modelStore';
+import { Link } from 'react-router-dom';
+import { useModelStore, getActiveKeyValue } from '../stores/modelStore';
 import {
   readClaudeSettings,
   mergeClaudeEnv,
@@ -118,9 +119,9 @@ export default function ClaudeCode() {
         const env = (settings.env as Record<string, string>) || {};
         const currentUrl = env.ANTHROPIC_BASE_URL || '';
         const currentKey = env.ANTHROPIC_AUTH_TOKEN || '';
-        // 根据当前 API 信息匹配服务商（用 anthropicUrl 字段）
+        // 根据当前 API 信息匹配服务商
         const matched = providers.find(
-          (p) => p.anthropicUrl === currentUrl && p.apiKey === currentKey,
+          (p) => p.anthropicUrl === currentUrl && getActiveKeyValue(p) === currentKey,
         );
         if (matched) {
           setSelectedProviderId(matched.id);
@@ -160,10 +161,6 @@ export default function ClaudeCode() {
   // Claude Code 仅支持填了 Anthropic URL 的服务商
   const anthropicProviders = providers.filter((p) => !!p.anthropicUrl);
 
-  const updateModel = (key: string, value: string) => {
-    setModelsState((prev) => ({ ...prev, [key]: value }));
-  };
-
   // 同步包装：本地 setModels 同时持久化到 store
   // 支持 setModels({...}) 和 setModels(prev => ...) 两种用法
   const setModels = (
@@ -202,15 +199,17 @@ export default function ClaudeCode() {
         );
         return;
       }
-      if (!provider.apiKey) {
-        toast(`「${provider.name}」缺少 API Key`, 'error');
+      // 从 apiKeys 中读取当前激活 key 的 value
+      const keyValue = getActiveKeyValue(provider);
+      if (!keyValue) {
+        toast(`「${provider.name}」未指定激活的 API Key，请到「模型设置」`, 'error');
         return;
       }
 
       // 1. 用 key-level merge：仅修改 env 字段，保留 permissions/hooks/statusLine 等其他 key
       const env: Record<string, string> = {};
       env.ANTHROPIC_BASE_URL = provider.anthropicUrl;
-      env.ANTHROPIC_AUTH_TOKEN = provider.apiKey;
+      env.ANTHROPIC_AUTH_TOKEN = keyValue;
       env.ANTHROPIC_MODEL = resolveModelName(models.default);
       env.ANTHROPIC_DEFAULT_SONNET_MODEL = resolveModelName(models.sonnet);
       env.ANTHROPIC_DEFAULT_OPUS_MODEL = resolveModelName(models.opus);
@@ -261,7 +260,6 @@ export default function ClaudeCode() {
     try {
       setEditorContent(JSON.stringify(JSON.parse(editorContent), null, 2));
       setEditorError('');
-      setEditorDirty(false);
     } catch (e) { setEditorError('JSON 格式错误: ' + String(e)); }
   };
 
@@ -285,7 +283,7 @@ export default function ClaudeCode() {
         <section className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 space-y-4">
           <h2 className="text-sm font-medium text-zinc-400">选择服务商</h2>
           {providers.length === 0 ? (
-            <p className="text-xs text-zinc-500">请先在<a href="/models" className="text-blue-400 hover:underline">模型设置</a>中添加服务商</p>
+            <p className="text-xs text-zinc-500">请先在<Link to="/models" className="text-blue-400 hover:underline">模型设置</Link>中添加服务商</p>
           ) : anthropicProviders.length === 0 ? (
             <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 space-y-1.5">
               <p className="text-xs text-amber-300 font-medium">⚠ Claude Code 需要 Anthropic 格式服务商</p>
@@ -451,7 +449,7 @@ export default function ClaudeCode() {
             <p className="text-xs text-zinc-600">每个变体可独立配置不同模型，留空则使用默认值</p>
           </div>
           {allModels.length === 0 ? (
-            <p className="text-xs text-zinc-500">请先在<a href="/models" className="text-blue-400 hover:underline">模型设置</a>中添加服务商和模型</p>
+            <p className="text-xs text-zinc-500">请先在<Link to="/models" className="text-blue-400 hover:underline">模型设置</Link>中添加服务商和模型</p>
           ) : (
             <div className="space-y-3">
               {MODEL_FIELDS.map((f) => (
@@ -460,7 +458,7 @@ export default function ClaudeCode() {
                     <label className="text-sm text-white">{f.label}</label>
                     <span className="text-[10px] text-zinc-600">{f.desc}</span>
                   </div>
-                  <select value={models[f.key]} onChange={(e) => updateModel(f.key, e.target.value)}
+                  <select value={models[f.key]} onChange={(e) => setModels((prev) => ({ ...prev, [f.key]: e.target.value }))}
                     className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500">
                     <option value="">未配置（使用默认）</option>
                     {allModels.map((m) => {

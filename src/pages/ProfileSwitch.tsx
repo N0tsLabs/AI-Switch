@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useProfileStore, type Profile } from '../stores/profileStore';
-import { useModelStore } from '../stores/modelStore';
+import { useModelStore, getActiveKeyValue } from '../stores/modelStore';
 import { mergeClaudeEnv, mergeOpencodeManaged } from '../lib/tauri';
 import { useToast } from '../components/useToast';
+import { buildOpenCodeAgents } from '../utils/opencodeAgents';
 
 export default function ProfileSwitch() {
   const { profiles, activeProfileId, addProfile, updateProfile, removeProfile, setActiveProfile, saveToStorage } = useProfileStore();
@@ -95,13 +96,15 @@ export default function ProfileSwitch() {
         );
         return;
       }
-      if (!provider.apiKey) {
-        toast(`「${provider.name}」缺少 API Key`, 'error');
+      // 用 helper 取激活 key 的 value
+      const keyValue = getActiveKeyValue(provider);
+      if (!keyValue) {
+        toast(`「${provider.name}」缺少 API Key，请到「模型设置」补充`, 'error');
         return;
       }
       const env: Record<string, string> = {};
       env.ANTHROPIC_BASE_URL = provider.anthropicUrl;
-      env.ANTHROPIC_AUTH_TOKEN = provider.apiKey;
+      env.ANTHROPIC_AUTH_TOKEN = keyValue;
       if (profile.claude.enabledModel) {
         // 若该模型在 modelStore 中标记了 context1M，自动追加 [1M] 后缀
         const cap = provider.modelCapabilities[profile.claude.enabledModel];
@@ -113,35 +116,8 @@ export default function ProfileSwitch() {
 
       // 2. OpenCode oh-my-openagent.json — 仅合并 agents + categories 顶层字段
       if (profile.opencode.models.length > 0) {
-        const agents: Record<string, unknown> = {};
-        const categories: Record<string, unknown> = {};
         const modelIds = profile.opencode.models.map((m) => m.modelId);
-
-        modelIds.forEach((modelId, i) => {
-          const agentName = i === 0 ? 'primary' : `agent-${i}`;
-          // 从 modelStore 查能力
-          let cap = null;
-          for (const p of providers) {
-            if (p.modelCapabilities[modelId]) { cap = p.modelCapabilities[modelId]; break; }
-          }
-          const modelStr = `opencode/${modelId}`;
-          agents[agentName] = {
-            model: modelStr,
-            ...(cap?.supportsImage ? { supports_image: true } : {}),
-            ...(cap?.supportsVideo ? { supports_video: true } : {}),
-            ...(cap?.context1M ? { context_length: '1M' } : {}),
-            fallback_models: modelIds
-              .filter((m) => m !== modelId)
-              .slice(0, 2)
-              .map((m) => ({ model: `opencode/${m}` })),
-          };
-        });
-
-        categories['default'] = {
-          model: `opencode/${modelIds[0]}`,
-          fallback_models: modelIds.slice(1, 3).map((m) => ({ model: `opencode/${m}` })),
-        };
-
+        const { agents, categories } = buildOpenCodeAgents(modelIds, providers);
         await mergeOpencodeManaged({ agents, categories });
       }
 

@@ -4,7 +4,7 @@ import { useModelStore } from '../stores/modelStore';
 import { useProfileStore } from '../stores/profileStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { getPayloadData, isPayloadDataEqual, type PayloadData } from '../utils/equal';
-import { computeSyncStatus, statusLabel, type SyncStatus } from '../utils/syncStatus';
+import { type SyncStatus } from '../utils/syncStatus';
 
 /**
  * 检测同步状态。
@@ -30,7 +30,6 @@ export function useSyncDirty(): {
       return { isDirty: true, status: 'neverSynced', snapshot: null };
     }
     const dirty = !isPayloadDataEqual(current, lastSyncedSnapshot);
-    // 这里只基于本地判断粗略 status；冲突检测需要 cloudVersion，由 SyncModal 处理
     const status: SyncStatus = dirty ? 'localDirty' : 'clean';
     return { isDirty: dirty, status, snapshot: lastSyncedSnapshot };
   }, [providers, profiles, activeProfileId, claude, opencode, lastSyncedSnapshot]);

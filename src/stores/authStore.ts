@@ -25,7 +25,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
   },
 
-  clearUser: () => set({ user: null, loaded: true }),
+  clearUser: () => set({ user: null, loaded: false }),
 }));
 
 // 避免 zustand selector 问题

@@ -8,10 +8,10 @@ import {
   readLocalConfigs,
   detectApiKeys,
   getConfigPaths,
-  syncCheckVersion,
   type LocalConfigs,
   type ConfigPaths,
 } from '../lib/tauri';
+import { useCloudVersion } from '../hooks/useCloudVersion';
 
 /** 根据时间返回问候语 */
 function getGreeting(): { text: string; emoji: string } {
@@ -85,11 +85,13 @@ function importToProviders(
       const model = env[key];
       if (model && apiKey && !seen.has(model)) {
         seen.add(model);
+        const keyId = `k-imp-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
         addProvider({
           id: `claude-${model}-${Date.now()}`,
           name: model,
           anthropicUrl: baseUrl,
-          apiKey,
+          apiKeys: [{ id: keyId, label: '导入', value: apiKey, createdAt: Date.now() }],
+          selectedKeyId: keyId,
           models: [model],
           modelCapabilities: {},
         });
@@ -127,7 +129,8 @@ function importToProviders(
         id: `opencode-${modelId}-${Date.now()}`,
         name: modelId,
         openaiUrl,
-        apiKey: '',
+        apiKeys: [],
+        selectedKeyId: null,
         models: [modelId],
         modelCapabilities: {},
       });
@@ -153,11 +156,10 @@ export default function Dashboard() {
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState('');
 
-  // 云同步状态：探测云端 version，60 秒轮询
-  const [cloudVersion, setCloudVersion] = useState<number | null>(null);
-  const [cloudNotFound, setCloudNotFound] = useState(false);
-  const [cloudError, setCloudError] = useState<string | null>(null);
-  const [cloudChecking, setCloudChecking] = useState(false);
+  const { cloudVersion, cloudNotFound, cloudError, cloudChecking } = useCloudVersion(
+    !!githubUser,
+    60_000,
+  );
 
   useEffect(() => {
     Promise.all([readLocalConfigs(), detectApiKeys(), getConfigPaths()])
@@ -168,41 +170,6 @@ export default function Dashboard() {
       })
       .catch(() => {});
   }, []);
-
-  useEffect(() => {
-    if (!githubUser) {
-      setCloudVersion(null);
-      setCloudNotFound(false);
-      setCloudError(null);
-      return;
-    }
-    let cancelled = false;
-    const tick = async () => {
-      if (cancelled) return;
-      setCloudChecking(true);
-      try {
-        const info = await syncCheckVersion();
-        if (cancelled) return;
-        setCloudVersion(info.version);
-        setCloudNotFound(info.notFound);
-        setCloudError(info.error ?? null);
-      } catch (e) {
-        if (cancelled) return;
-        setCloudError('前端错误: ' + String(e));
-      } finally {
-        if (!cancelled) setCloudChecking(false);
-      }
-    };
-    // 1.5s 后首次探测
-    const initial = setTimeout(tick, 1500);
-    // 60s 轮询
-    const id = setInterval(tick, 60_000);
-    return () => {
-      cancelled = true;
-      clearTimeout(initial);
-      clearInterval(id);
-    };
-  }, [githubUser, lastSyncedVersion]);
 
   const handleImportLocal = async () => {
     if (!localConfigs) return;

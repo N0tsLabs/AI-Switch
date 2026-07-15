@@ -1,6 +1,14 @@
 use serde::{Deserialize, Serialize};
 
 const CLIENT_ID: &str = "Ov23liYBSMORhKxeSczi";
+const REQUEST_TIMEOUT_SECS: u64 = 30;
+
+fn build_client() -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(REQUEST_TIMEOUT_SECS))
+        .build()
+        .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))
+}
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct DeviceCodeResponse {
@@ -90,7 +98,7 @@ fn delete_token() -> Result<(), String> {
 /// Step 1: 请求 device code
 #[tauri::command]
 pub async fn device_flow_start() -> Result<DeviceCodeResponse, String> {
-    let client = reqwest::Client::new();
+    let client = build_client()?;
     let resp = client
         .post("https://github.com/login/device/code")
         .header("Accept", "application/json")
@@ -117,7 +125,7 @@ pub async fn device_flow_start() -> Result<DeviceCodeResponse, String> {
 /// Step 2: 轮询 token（前端每 N 秒调一次）
 #[tauri::command]
 pub async fn device_flow_poll(device_code: String) -> Result<String, String> {
-    let client = reqwest::Client::new();
+    let client = build_client()?;
 
     let resp = client
         .post("https://github.com/login/oauth/access_token")
@@ -138,8 +146,7 @@ pub async fn device_flow_poll(device_code: String) -> Result<String, String> {
         .map_err(|e| format!("解析响应失败: {}", e))?;
 
     if let Some(token) = body.access_token {
-        // 获取用户名并保存
-        let user = fetch_user_from_token(&token).await.unwrap_or_default();
+        let user = fetch_user_from_token(&token).await?;
         save_token(&token, &user.login)?;
         Ok(token)
     } else {
@@ -156,7 +163,7 @@ pub async fn device_flow_poll(device_code: String) -> Result<String, String> {
 
 /// 获取当前登录用户
 async fn fetch_user_from_token(token: &str) -> Result<GithubUser, String> {
-    let client = reqwest::Client::new();
+    let client = build_client()?;
     let resp = client
         .get("https://api.github.com/user")
         .header("Authorization", format!("Bearer {}", token))
@@ -336,7 +343,7 @@ async fn download_file(
 pub async fn sync_upload(payload: serde_json::Value) -> Result<String, String> {
     let token = load_token()?;
     let user_info = fetch_user_from_token(&token).await?;
-    let client = reqwest::Client::new();
+    let client = build_client()?;
 
     // 确保仓库存在
     ensure_repo(&client, &token, &user_info.login).await?;
@@ -351,6 +358,25 @@ pub async fn sync_upload(payload: serde_json::Value) -> Result<String, String> {
             "不支持的 schemaVersion: {}（仅支持 4）",
             schema
         ));
+    }
+
+    let new_version = payload
+        .get("version")
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| "payload 缺少 version".to_string())?;
+
+    if let Ok(existing) = download_file(&client, &token, &user_info.login, "profiles.json").await
+    {
+        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&existing) {
+            if let Some(curr) = parsed.get("version").and_then(|v| v.as_u64()) {
+                if new_version <= curr {
+                    return Err(format!(
+                        "版本冲突：你的版本 v{} 不超过云端版本 v{}，可能被其他设备更新。请先下载再上传。",
+                        new_version, curr
+                    ));
+                }
+            }
+        }
     }
 
     let content = serde_json::to_string_pretty(&payload)
@@ -377,7 +403,7 @@ pub async fn sync_upload(payload: serde_json::Value) -> Result<String, String> {
 pub async fn sync_download() -> Result<serde_json::Value, String> {
     let token = load_token()?;
     let user_info = fetch_user_from_token(&token).await?;
-    let client = reqwest::Client::new();
+    let client = build_client()?;
 
     let content = match download_file(
         &client,
@@ -416,12 +442,10 @@ pub async fn sync_download() -> Result<serde_json::Value, String> {
 /// 轻量级版本探测：从云端 profiles.json 读取 version 字段，不下载完整 payload
 /// 用于启动/定时检查云端是否有更新
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CloudVersionInfo {
-    /// 云端当前 version（profiles.json 不存在或解析失败时为 None）
     pub version: Option<u64>,
-    /// profiles.json 不存在
     pub not_found: bool,
-    /// 探测过程中的错误（如 token 失效、网络失败）。有值时 version/not_found 无意义
     pub error: Option<String>,
 }
 
@@ -463,7 +487,7 @@ async fn sync_check_version_inner() -> Result<CloudVersionInfo, String> {
         }
     };
 
-    let client = reqwest::Client::new();
+    let client = build_client()?;
 
     let content = match download_file(
         &client,
@@ -559,8 +583,8 @@ pub struct UpdateInfo {
 /// 检查是否有新版本
 #[tauri::command]
 pub async fn check_update() -> Result<UpdateInfo, String> {
-    let client = reqwest::Client::new();
-    let remote_version = fetch_remote_version(&client).await.unwrap_or_default();
+    let client = build_client()?;
+    let remote_version = fetch_remote_version(&client).await?;
 
     let has_update = if remote_version.is_empty() {
         false

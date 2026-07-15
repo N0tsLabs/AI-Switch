@@ -95,9 +95,6 @@ function CloudSyncWatcher() {
         const cv = info.version ?? 0;
         const lastSynced = useSettingsStore.getState().lastSyncedVersion ?? 0;
         if (cv > lastSynced) {
-          // 缓存云端 version 给 SyncModal 用
-          localStorage.setItem('ai-switch-cloud-version', String(cv));
-          // 已在 /sync 页面就不打扰
           if (!window.location.pathname.startsWith('/sync')) {
             toast(
               `云端有新版本（v${cv}，本地 v${lastSynced}）`,

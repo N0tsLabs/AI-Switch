@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { useModelStore, type Provider } from '../stores/modelStore';
+import { useModelStore, type Provider, type ApiKey, getActiveKeyValue } from '../stores/modelStore';
 import { fetchOpenaiModels, testProviderUrl, type TestResult } from '../lib/tauri';
 import { useToast } from '../components/useToast';
+import { ApiKeyEditor } from '../components/ApiKeyEditor';
 
 function ProviderForm({ onSave, initial }: { onSave: (p: Provider) => void; initial?: Provider }) {
   const { toast } = useToast();
@@ -16,7 +17,14 @@ function ProviderForm({ onSave, initial }: { onSave: (p: Provider) => void; init
     ?? '';
   const [anthropicUrl, setAnthropicUrl] = useState(initAnthropicUrl);
   const [openaiUrl, setOpenaiUrl] = useState(initOpenaiUrl);
-  const [apiKey, setApiKey] = useState(initial?.apiKey || '');
+
+  // 多 Key 管理：本地草稿状态，保存时整体交给 onSave
+  const [keys, setKeys] = useState<ApiKey[]>(initial?.apiKeys ?? []);
+  const [selectedKeyId, setSelectedKeyId] = useState<string | null>(
+    initial?.selectedKeyId ?? keys[0]?.id ?? null,
+  );
+  const [editingKey, setEditingKey] = useState<ApiKey | null>(null); // null = 关闭
+  const [isNewKey, setIsNewKey] = useState(false);
 
   // 已保存的模型列表
   const [models, setModels] = useState<string[]>(initial?.models || []);
@@ -40,32 +48,46 @@ function ProviderForm({ onSave, initial }: { onSave: (p: Provider) => void; init
       toast('请先填写 URL', 'error');
       return;
     }
+    const activeKey = keys.find((k) => k.id === selectedKeyId)?.value ?? '';
+    if (!activeKey) {
+      toast('请先添加并选中一个 API Key', 'error');
+      return;
+    }
     const setter = format === 'openai' ? setOpenaiTest : setAnthropicTest;
     setter('testing');
     try {
-      // 优先用第一个模型，没有则用后端默认
       const firstModel = models[0];
-      const result = await testProviderUrl(targetUrl, apiKey, format, firstModel);
+      const result = await testProviderUrl(targetUrl, activeKey, format, firstModel);
       setter(result);
+      // 记录到 key 上（成功）
+      setKeys((prev) => prev.map((k) =>
+        k.id === selectedKeyId
+          ? { ...k, lastTestOk: result.ok, lastTestAt: Date.now(), lastTestMessage: result.message }
+          : k,
+      ));
     } catch (e) {
-      setter({
-        ok: false,
-        status: 0,
-        message: String(e),
-        latencyMs: 0,
-      });
+      const failed: TestResult = { ok: false, status: 0, message: String(e), latencyMs: 0 };
+      setter(failed);
+      // 失败也要更新 key 的测试状态（对称）
+      setKeys((prev) => prev.map((k) =>
+        k.id === selectedKeyId
+          ? { ...k, lastTestOk: false, lastTestAt: Date.now(), lastTestMessage: failed.message }
+          : k,
+      ));
     }
   };
 
   // 获取模型列表（OpenAI 端点专用）
   const handleFetchModels = async () => {
     if (!openaiUrl) { setError('请先填写 OpenAI 格式 URL'); return; }
+    const activeKey = keys.find((k) => k.id === selectedKeyId)?.value ?? '';
+    if (!activeKey) { setError('请先添加并选中一个 API Key'); return; }
     setLoading(true);
     setError('');
     setFetchedModels([]);
     setFetchedSelected(new Set());
     try {
-      const result = await fetchOpenaiModels(openaiUrl, apiKey);
+      const result = await fetchOpenaiModels(openaiUrl, activeKey);
       if (result.error) {
         setError(result.error);
       } else {
@@ -156,11 +178,49 @@ function ProviderForm({ onSave, initial }: { onSave: (p: Provider) => void; init
       name: name.trim(),
       anthropicUrl: anthropicUrl.trim() || undefined,
       openaiUrl: openaiUrl.trim() || undefined,
-      apiKey,
+      apiKeys: keys,
+      selectedKeyId,
       models,
       modelCapabilities: caps,
     });
   };
+
+  // Key 操作辅助
+  const saveKey = (k: Omit<ApiKey, 'createdAt'>) => {
+    if (isNewKey) {
+      const newKey: ApiKey = {
+        ...k,
+        id: `k-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+        createdAt: Date.now(),
+      };
+      const nextKeys = [...keys, newKey];
+      setKeys(nextKeys);
+      // 新建的第一个 Key 自动设为默认
+      if (nextKeys.length === 1 || !selectedKeyId) setSelectedKeyId(newKey.id);
+    } else {
+      // 编辑现有：清除旧的连通性测试结果（key 内容已变，旧的 ✓/✗ 不再可信）
+      setKeys((prev) => prev.map((x) =>
+        x.id === k.id
+          ? { ...x, label: k.label, value: k.value, lastTestOk: undefined, lastTestAt: undefined, lastTestMessage: undefined }
+          : x,
+      ));
+    }
+    setEditingKey(null);
+    setIsNewKey(false);
+  };
+
+  const removeKey = (id: string) => {
+    setKeys((prev) => {
+      const next = prev.filter((k) => k.id !== id);
+      // 若删的是激活 key，自动切到第一个剩余
+      if (id === selectedKeyId) {
+        setSelectedKeyId(next[0]?.id ?? null);
+      }
+      return next;
+    });
+  };
+
+  const setActiveKey = (id: string) => setSelectedKeyId(id);
 
   return (
     <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 space-y-4">
@@ -208,11 +268,68 @@ function ProviderForm({ onSave, initial }: { onSave: (p: Provider) => void; init
       </div>
       <p className="text-[10px] text-zinc-600 -mt-2">按需填写：只填 ClaudeCode 要用的填 Anthropic URL，只填 OpenCode 要用的填 OpenAI URL。一个服务商可同时填两个。</p>
 
-      {/* API Key */}
+      {/* API Key 列表（多 key + 默认 key，可切换） */}
       <div>
-        <label className="block text-xs text-zinc-500 mb-1">API Key</label>
-        <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-..."
-          className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500" />
+        <div className="flex items-center justify-between mb-2">
+          <label className="block text-xs text-zinc-500">API Key 列表</label>
+          <button type="button"
+            onClick={() => { setIsNewKey(true); setEditingKey({ id: '', label: '', value: '', createdAt: 0 }); }}
+            className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white text-[11px] rounded transition-colors">
+            + 添加新 Key
+          </button>
+        </div>
+        {keys.length === 0 ? (
+          <p className="text-xs text-zinc-600 py-3 text-center bg-zinc-800/30 rounded-lg">
+            尚未添加任何 Key，点击右上方「+ 添加」
+          </p>
+        ) : (
+          <div className="space-y-1.5">
+            {keys.map((k) => {
+              const isActive = k.id === selectedKeyId;
+              return (
+                <div key={k.id} className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${
+                  isActive
+                    ? 'bg-emerald-500/10 border-emerald-500/30'
+                    : 'bg-zinc-800/40 border-zinc-700'
+                }`}>
+                  <span className="text-base shrink-0">🔑</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-white truncate">{k.label}</span>
+                      {isActive && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 shrink-0">
+                          默认
+                        </span>
+                      )}
+                      {k.lastTestOk !== undefined && (
+                        <span className={`text-[10px] shrink-0 ${k.lastTestOk ? 'text-emerald-400' : 'text-red-400'}`}>
+                          {k.lastTestOk ? '✓' : '✗'}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-zinc-600 truncate font-mono">
+                      {k.value.slice(0, 8)}…{k.value.slice(-4)}
+                    </p>
+                  </div>
+                  {!isActive && (
+                    <button type="button" onClick={() => setActiveKey(k.id)}
+                      className="shrink-0 px-2 py-0.5 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 text-[10px] rounded">
+                      设为默认
+                    </button>
+                  )}
+                  <button type="button" onClick={() => { setIsNewKey(false); setEditingKey(k); }}
+                    className="shrink-0 text-zinc-500 hover:text-white px-1.5" title="编辑">
+                    ✎
+                  </button>
+                  <button type="button" onClick={() => removeKey(k.id)}
+                    className="shrink-0 text-zinc-500 hover:text-red-400 px-1.5" title="删除">
+                    ✕
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* 上下文长度提示（仅 Anthropic） */}
@@ -310,6 +427,17 @@ function ProviderForm({ onSave, initial }: { onSave: (p: Provider) => void; init
           保存
         </button>
       </div>
+
+      {/* Key 编辑弹窗 */}
+      {editingKey && (
+        <ApiKeyEditor
+          provider={{ ...initial, anthropicUrl, openaiUrl } as Provider}
+          existing={isNewKey ? null : editingKey}
+          otherLabels={keys.filter((k) => k.id !== editingKey.id).map((k) => k.label)}
+          onSave={saveKey}
+          onCancel={() => { setEditingKey(null); setIsNewKey(false); }}
+        />
+      )}
     </div>
   );
 }
@@ -334,7 +462,7 @@ export default function ModelSettings() {
     const setter = format === 'openai' ? setOpenaiTests : setAnthropicTests;
     setter((prev) => ({ ...prev, [providerId]: 'testing' }));
     try {
-      const result = await testProviderUrl(targetUrl, p.apiKey, format, p.models[0]);
+      const result = await testProviderUrl(targetUrl, getActiveKeyValue(p), format, p.models[0]);
       setter((prev) => ({ ...prev, [providerId]: result }));
     } catch (e) {
       setter((prev) => ({
@@ -386,6 +514,20 @@ export default function ModelSettings() {
                     )}
                     <span className="text-xs text-zinc-600">{p.models.length} 模型</span>
                   </div>
+                  {/* 激活的 API Key */}
+                  {p.apiKeys.length > 0 && (
+                    <div className="text-xs text-zinc-500 mt-1.5 space-y-0.5">
+                      <p>
+                        🔑 默认 Key：
+                        <span className="text-zinc-300 ml-1">
+                          {p.apiKeys.find((k) => k.id === p.selectedKeyId)?.label ?? '未选择'}
+                        </span>
+                        {p.apiKeys.length > 1 && (
+                          <span className="text-zinc-600 ml-1">（共 {p.apiKeys.length} 个）</span>
+                        )}
+                      </p>
+                    </div>
+                  )}
                   <div className="text-xs text-zinc-500 mt-1.5 space-y-1">
                     {p.openaiUrl && (
                       <ProviderUrlRow emoji="🟢" url={p.openaiUrl} test={openaiTests[p.id]} />

@@ -279,28 +279,29 @@ fn remove_at_path(root: &mut Value, path: &[String]) {
 
 /// 批量应用任意路径操作到 settings.json（Claude Code）
 #[tauri::command]
-pub fn merge_claude_extras(ops: Vec<ExtraOp>) -> Result<(), String> {
-    let path = claude_dir()
-        .ok_or("无法获取主目录")?
-        .join("settings.json");
-
+fn merge_extras_at(path: std::path::PathBuf, ops: Vec<ExtraOp>) -> Result<(), String> {
     let mut root = if path.exists() {
         read_json(&path)?
     } else {
         serde_json::json!({})
     };
-
     for op in ops {
-        if op.path.is_empty() {
-            continue;
-        }
+        if op.path.is_empty() { continue; }
         match op.value {
             None => remove_at_path(&mut root, &op.path),
             Some(v) => set_at_path(&mut root, &op.path, v),
         }
     }
-
     write_json(&path, &root)
+}
+
+/// 批量应用任意路径操作到 settings.json（Claude Code）
+#[tauri::command]
+pub fn merge_claude_extras(ops: Vec<ExtraOp>) -> Result<(), String> {
+    let path = claude_dir()
+        .ok_or("无法获取主目录")?
+        .join("settings.json");
+    merge_extras_at(path, ops)
 }
 
 /// 批量应用任意路径操作到 oh-my-openagent.json（OpenCode）
@@ -309,24 +310,7 @@ pub fn merge_opencode_extras(ops: Vec<ExtraOp>) -> Result<(), String> {
     let path = opencode_dir()
         .ok_or("无法获取主目录")?
         .join("oh-my-openagent.json");
-
-    let mut root = if path.exists() {
-        read_json(&path)?
-    } else {
-        serde_json::json!({})
-    };
-
-    for op in ops {
-        if op.path.is_empty() {
-            continue;
-        }
-        match op.value {
-            None => remove_at_path(&mut root, &op.path),
-            Some(v) => set_at_path(&mut root, &op.path, v),
-        }
-    }
-
-    write_json(&path, &root)
+    merge_extras_at(path, ops)
 }
 
 // ============ 测试服务商 URL 连通性 ============
@@ -547,17 +531,40 @@ pub fn get_config_paths() -> Result<Value, String> {
 
 // ============ 通用文件编辑器 ============
 
+fn validate_config_path(path: &str) -> Result<std::path::PathBuf, String> {
+    let p = std::path::PathBuf::from(path);
+    let resolved = if p.is_absolute() {
+        p
+    } else {
+        return Err(format!("路径必须是绝对路径: {}", path));
+    };
+    let home = dirs::home_dir().ok_or("无法获取主目录")?;
+    let allowed = vec![
+        home.join(".claude"),
+        home.join(".config").join("opencode"),
+        home.join(".ai-switch"),
+    ];
+    let resolved_str = resolved.to_string_lossy().to_lowercase();
+    let allowed_strs: Vec<String> = allowed.iter().map(|a| a.to_string_lossy().to_lowercase()).collect();
+    if !allowed_strs.iter().any(|a| resolved_str.starts_with(a)) {
+        return Err(format!("不允许访问该路径（仅允许 ~/.claude、~/.config/opencode、~/.ai-switch）"));
+    }
+    Ok(resolved)
+}
+
 #[tauri::command]
 pub fn read_file_content(path: String) -> Result<String, String> {
-    std::fs::read_to_string(&path).map_err(|e| format!("读取失败: {}", e))
+    let resolved = validate_config_path(&path)?;
+    std::fs::read_to_string(&resolved).map_err(|e| format!("读取失败: {}", e))
 }
 
 #[tauri::command]
 pub fn write_file_content(path: String, content: String) -> Result<(), String> {
-    if let Some(parent) = std::path::Path::new(&path).parent() {
+    let resolved = validate_config_path(&path)?;
+    if let Some(parent) = resolved.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("创建目录失败: {}", e))?;
     }
-    std::fs::write(&path, &content).map_err(|e| format!("写入失败: {}", e))
+    std::fs::write(&resolved, &content).map_err(|e| format!("写入失败: {}", e))
 }
 
 // ============ 打开浏览器 ============

@@ -13,10 +13,12 @@ pub struct FetchModelsResult {
 }
 
 /// 从 OpenAI 兼容接口读取模型列表
-/// POST /v1/models 或 GET /v1/models
 #[tauri::command]
 pub async fn fetch_openai_models(url: String, api_key: String) -> Result<FetchModelsResult, String> {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
 
     // 自动补全 /v1/models 路径
     let base = url.trim_end_matches('/');

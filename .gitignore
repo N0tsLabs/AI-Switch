@@ -29,3 +29,6 @@ src-tauri/.omc/
 *.njsproj
 *.sln
 *.sw?
+
+# Audit reports
+audit/

@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { ToastContext } from './toastContext';
 
 interface Toast {
@@ -6,13 +6,23 @@ interface Toast {
   message: string;
   type: 'success' | 'error' | 'info';
   action?: { label: string; onClick: () => void };
-  /** 自定义持续时间（ms），默认 2000；带 action 时默认 10000 */
   duration?: number;
+  timerId?: ReturnType<typeof setTimeout>;
 }
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const nextIdRef = useRef(0);
+  const timersRef = useRef(new Map<number, ReturnType<typeof setTimeout>>());
+
+  useEffect(() => {
+    return () => {
+      for (const timer of timersRef.current.values()) {
+        clearTimeout(timer);
+      }
+      timersRef.current.clear();
+    };
+  }, []);
 
   const toast = useCallback((
     message: string,
@@ -28,12 +38,16 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       duration: opts?.duration ?? (opts?.action ? 10000 : 2000),
     };
     setToasts((prev) => [...prev, t]);
-    setTimeout(() => {
+    t.timerId = setTimeout(() => {
+      timersRef.current.delete(id);
       setToasts((prev) => prev.filter((x) => x.id !== id));
     }, t.duration);
+    timersRef.current.set(id, t.timerId);
   }, []);
 
   const removeToast = (id: number) => {
+    const timer = timersRef.current.get(id);
+    if (timer) { clearTimeout(timer); timersRef.current.delete(id); }
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
