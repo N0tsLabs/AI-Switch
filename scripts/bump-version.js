@@ -19,6 +19,7 @@ const files = [
   { path: 'src-tauri/Cargo.toml', key: 'version', regex: /^version\s*=\s*"([^"]+)"/m },
   { path: 'src-tauri/tauri.conf.json', key: 'version' },
   { path: 'VERSION', raw: true },
+  { path: 'latest.json', key: 'version' },
 ];
 
 files.forEach(({ path: filePath, key, regex, raw }) => {

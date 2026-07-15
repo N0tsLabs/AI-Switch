@@ -1,23 +1,23 @@
 {
-  "version": "0.1.0",
+  "version": "0.4.0",
   "notes": "See the GitHub release for full changelog.",
-  "pub_date": "2026-06-18T00:00:00Z",
+  "pub_date": "2026-07-15T00:00:00Z",
   "platforms": {
     "windows-x86_64": {
       "signature": "Content of the .sig file",
-      "url": "https://github.com/n0tssss/ai-switch/releases/download/v0.1.0/AI-Switch_0.1.0_x64-setup.exe"
+      "url": "https://github.com/n0tssss/ai-switch/releases/download/v0.4.0/AI-Switch_0.4.0_x64-setup.exe"
     },
     "darwin-x86_64": {
       "signature": "Content of the .sig file",
-      "url": "https://github.com/n0tssss/ai-switch/releases/download/v0.1.0/AI-Switch_0.1.0_x64.dmg"
+      "url": "https://github.com/n0tssss/ai-switch/releases/download/v0.4.0/AI-Switch_0.4.0_x64.dmg"
     },
     "darwin-aarch64": {
       "signature": "Content of the .sig file",
-      "url": "https://github.com/n0tssss/ai-switch/releases/download/v0.1.0/AI-Switch_0.1.0_aarch64.dmg"
+      "url": "https://github.com/n0tssss/ai-switch/releases/download/v0.4.0/AI-Switch_0.4.0_aarch64.dmg"
     },
     "linux-x86_64": {
       "signature": "Content of the .sig file",
-      "url": "https://github.com/n0tssss/ai-switch/releases/download/v0.1.0/ai-switch_0.1.0_amd64.AppImage"
+      "url": "https://github.com/n0tssss/ai-switch/releases/download/v0.4.0/ai-switch_0.4.0_amd64.AppImage"
     }
   }
 }
