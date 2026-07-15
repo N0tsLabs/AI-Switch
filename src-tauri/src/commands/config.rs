@@ -465,35 +465,35 @@ pub fn read_local_configs() -> Result<Value, String> {
         }
     });
 
-    // Claude Code
+    // Claude Code — detection based on file existence, JSON parse is best-effort
     let claude_settings_path = claude_dir().map(|d| d.join("settings.json"));
     let claude_mcp_path = claude_dir().map(|d| d.join(".mcp.json"));
 
     if let Some(path) = &claude_settings_path {
         if path.exists() {
-            result["claude"]["settings"] = read_json(path)?;
             result["detected"]["claude"] = serde_json::json!(true);
+            result["claude"]["settings"] = read_json(path).unwrap_or(Value::Null);
         }
     }
     if let Some(path) = &claude_mcp_path {
         if path.exists() {
-            result["claude"]["mcp"] = read_json(path)?;
+            result["claude"]["mcp"] = read_json(path).unwrap_or(Value::Null);
         }
     }
 
-    // OpenCode
+    // OpenCode — same best-effort approach
     let opencode_config_path = opencode_dir().map(|d| d.join("opencode.json"));
     let opencode_agents_path = opencode_dir().map(|d| d.join("oh-my-openagent.json"));
 
     if let Some(path) = &opencode_config_path {
         if path.exists() {
-            result["opencode"]["config"] = read_json(path)?;
             result["detected"]["opencode"] = serde_json::json!(true);
+            result["opencode"]["config"] = read_json(path).unwrap_or(Value::Null);
         }
     }
     if let Some(path) = &opencode_agents_path {
         if path.exists() {
-            result["opencode"]["agents"] = read_json(path)?;
+            result["opencode"]["agents"] = read_json(path).unwrap_or(Value::Null);
         }
     }
 
