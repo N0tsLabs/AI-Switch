@@ -97,16 +97,17 @@ export function migrateProvider(p: Provider): Provider {
   const anthropicUrl = p.anthropicUrl ?? (oldFormat === 'anthropic' ? oldUrl : undefined);
   const openaiUrl = p.openaiUrl ?? (oldFormat === 'openai' ? oldUrl : undefined);
 
-  return {
+  const result: Provider = {
     id: p.id,
     name: p.name,
-    anthropicUrl,
-    openaiUrl,
     apiKeys: newKeys,
     selectedKeyId,
     models: p.models ?? [],
     modelCapabilities: p.modelCapabilities ?? {},
   };
+  if (anthropicUrl) result.anthropicUrl = anthropicUrl;
+  if (openaiUrl) result.openaiUrl = openaiUrl;
+  return result;
 }
 
 /** 取当前激活的 key 的 value（统一入口，三处复用） */
