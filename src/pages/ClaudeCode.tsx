@@ -154,9 +154,9 @@ export default function ClaudeCode() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [providers]);
 
-  const allModels = providers.flatMap((p) =>
-    p.models.map((m) => ({ label: `${p.name} / ${m}`, modelId: m }))
-  );
+  const selectedProvider = providers.find((p) => p.id === selectedProviderId);
+
+  const providerModels = selectedProvider?.models ?? [];
 
   // Claude Code 仅支持填了 Anthropic URL 的服务商
   const anthropicProviders = providers.filter((p) => !!p.anthropicUrl);
@@ -448,9 +448,7 @@ export default function ClaudeCode() {
             <h2 className="text-sm font-medium text-zinc-400">模型配置</h2>
             <p className="text-xs text-zinc-600">每个变体可独立配置不同模型，留空则使用默认值</p>
           </div>
-          {allModels.length === 0 ? (
-            <p className="text-xs text-zinc-500">请先在<Link to="/models" className="text-blue-400 hover:underline">模型设置</Link>中添加服务商和模型</p>
-          ) : (
+          {selectedProviderId && providerModels.length > 0 ? (
             <div className="space-y-3">
               {MODEL_FIELDS.map((f) => (
                 <div key={f.key} className="bg-zinc-800/50 rounded-lg p-3">
@@ -461,11 +459,11 @@ export default function ClaudeCode() {
                   <select value={models[f.key]} onChange={(e) => setModels((prev) => ({ ...prev, [f.key]: e.target.value }))}
                     className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500">
                     <option value="">未配置（使用默认）</option>
-                    {allModels.map((m) => {
-                      const cap = providers.find((p) => p.modelCapabilities[m.modelId])?.modelCapabilities[m.modelId];
+                    {providerModels.map((modelId) => {
+                      const cap = providers.find((p) => p.modelCapabilities[modelId])?.modelCapabilities[modelId];
                       return (
-                        <option key={m.modelId} value={m.modelId}>
-                          {m.label}{cap?.context1M ? ' (1M)' : ''}
+                        <option key={modelId} value={modelId}>
+                          {modelId}{cap?.context1M ? ' (1M)' : ''}
                         </option>
                       );
                     })}
@@ -473,6 +471,12 @@ export default function ClaudeCode() {
                 </div>
               ))}
             </div>
+          ) : (
+            <p className="text-xs text-zinc-500">
+              {!selectedProviderId
+                ? '请先在上方选择一个服务商'
+                : '该服务商暂无模型，请在模型设置中添加'}
+            </p>
           )}
         </section>
 
@@ -574,8 +578,9 @@ export default function ClaudeCode() {
               </div>
             </div>
           </div>
-        </div>
+      </div>
       )}
+
     </div>
   );
 }
