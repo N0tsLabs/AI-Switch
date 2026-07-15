@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { stableStringify, isPayloadDataEqual, getPayloadData, type PayloadData } from '../equal';
+import { stableStringify } from '../equal';
 
 describe('stableStringify', () => {
   it('handles primitives', () => {
@@ -8,7 +8,7 @@ describe('stableStringify', () => {
     expect(stableStringify('hello')).toBe('"hello"');
   });
 
-  it('sort keys for stable output', () => {
+  it('sorts keys for stable output', () => {
     const a = { b: 2, a: 1 };
     const b = { a: 1, b: 2 };
     expect(stableStringify(a)).toBe(stableStringify(b));
@@ -39,36 +39,5 @@ describe('stableStringify', () => {
     a.b = b;
     const result = stableStringify(a);
     expect(result).toContain('"[Circular]"');
-  });
-});
-
-describe('isPayloadDataEqual', () => {
-  it('returns true for identical payloads', () => {
-    const data = { providers: [{ id: 'p1' }], profiles: [], activeProfileId: null, claudeToggles: {}, opencodeToggles: {} };
-    expect(isPayloadDataEqual(data, { ...data })).toBe(true);
-  });
-
-  it('returns false for different payloads', () => {
-    const a = { providers: [{ id: 'p1' }], profiles: [], activeProfileId: null, claudeToggles: {}, opencodeToggles: {} };
-    const b = { providers: [{ id: 'p2' }], profiles: [], activeProfileId: null, claudeToggles: {}, opencodeToggles: {} };
-    expect(isPayloadDataEqual(a, b)).toBe(false);
-  });
-
-  it('does not crash on circular refs', () => {
-    const obj: Record<string, unknown> = { providers: [] };
-    obj.profiles = obj;
-    const data = obj as unknown as PayloadData;
-    expect(() => isPayloadDataEqual(data, data)).not.toThrow();
-  });
-});
-
-describe('getPayloadData', () => {
-  it('fills defaults for missing fields', () => {
-    const result = getPayloadData({});
-    expect(result.providers).toEqual([]);
-    expect(result.profiles).toEqual([]);
-    expect(result.activeProfileId).toBeNull();
-    expect(result.claudeToggles).toEqual({});
-    expect(result.opencodeToggles).toEqual({});
   });
 });

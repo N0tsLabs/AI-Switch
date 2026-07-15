@@ -16,35 +16,3 @@ export function stableStringify(value: unknown, seen = new WeakSet<object>()): s
     '}'
   );
 }
-
-export type PayloadData = {
-  providers: unknown;
-  profiles: unknown;
-  activeProfileId: unknown;
-  claudeToggles: unknown;
-  opencodeToggles: unknown;
-};
-
-export function getPayloadData(payload: {
-  providers?: unknown;
-  profiles?: unknown;
-  activeProfileId?: unknown;
-  claudeToggles?: unknown;
-  opencodeToggles?: unknown;
-}): PayloadData {
-  return {
-    providers: payload.providers ?? [],
-    profiles: payload.profiles ?? [],
-    activeProfileId: payload.activeProfileId ?? null,
-    claudeToggles: payload.claudeToggles ?? {},
-    opencodeToggles: payload.opencodeToggles ?? {},
-  };
-}
-
-export function isPayloadDataEqual(a: PayloadData, b: PayloadData): boolean {
-  try {
-    return stableStringify(a) === stableStringify(b);
-  } catch {
-    return false;
-  }
-}

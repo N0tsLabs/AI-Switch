@@ -1,6 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { Profile } from '../stores/profileStore';
-import type { ClaudeToggles, OpenCodeToggles } from '../stores/settingsStore';
 import type { Provider } from '../stores/modelStore';
 
 // ============ 通用 ============
@@ -209,17 +208,13 @@ export async function testProviderUrl(
 
 // ============ 云同步 ============
 
-/** 云同步载荷（v4 schema）：包含完整应用数据 — Profile + 服务商 + 行为开关 + 版本号 */
+/** 云同步载荷：仅同步服务商配置 + Profile 方案，不同步各工具的 toggle 设置 */
 export interface SyncPayload {
   schemaVersion: 4;
-  /** 同步版本号：每次成功 upload 后 +1；用于云端/本地对比 */
   version: number;
-  /** 服务商配置（含 API Key、URL、模型列表、模型能力） */
   providers: Provider[];
   profiles: Profile[];
   activeProfileId: string | null;
-  claudeToggles: Partial<ClaudeToggles>;
-  opencodeToggles: Partial<OpenCodeToggles>;
 }
 
 /** 云端版本探测结果（轻量级，不下载完整 payload） */
