@@ -39,17 +39,11 @@ export function useCloudSync() {
         claudeToggles: claude,
         opencodeToggles: opencode,
       };
+      const snapshot = getPayloadData(payload);
       const msg = await syncUpload(payload);
       replaceAllSettings({
         lastSyncedVersion: newVersion,
-        buildSnapshot: (newClaude, newOpencode) =>
-          getPayloadData({
-            providers,
-            profiles,
-            activeProfileId,
-            claudeToggles: newClaude,
-            opencodeToggles: newOpencode,
-          }),
+        lastSyncedSnapshot: snapshot,
       });
       toast(`${msg}（v${newVersion}）`, 'success');
       return true;
@@ -80,20 +74,20 @@ export function useCloudSync() {
       if (!payload.providers || !payload.profiles) {
         throw new Error('下载的数据不完整');
       }
+      const snapshot = getPayloadData({
+        providers: payload.providers,
+        profiles: payload.profiles,
+        activeProfileId: payload.activeProfileId,
+        claudeToggles: payload.claudeToggles ?? {},
+        opencodeToggles: payload.opencodeToggles ?? {},
+      });
       replaceAllProviders(payload.providers);
       replaceAllProfiles(payload.profiles, payload.activeProfileId);
       replaceAllSettings({
         claude: payload.claudeToggles,
         opencode: payload.opencodeToggles,
         lastSyncedVersion: payload.version,
-        buildSnapshot: (newClaude, newOpencode) =>
-          getPayloadData({
-            providers: useModelStore.getState().providers,
-            profiles: useProfileStore.getState().profiles,
-            activeProfileId: useProfileStore.getState().activeProfileId,
-            claudeToggles: newClaude,
-            opencodeToggles: newOpencode,
-          }),
+        lastSyncedSnapshot: snapshot,
       });
       toast(`已同步（云端 v${payload.version}）`, 'success');
       return true;
